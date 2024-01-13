@@ -521,7 +521,7 @@ def ssm(layer, x):
 ```python
         
         # [B,L,E]  [B,L,E]    [B,L,E]    [E]
-        y         =   y      +   x     *  D
+        y         =   y      +   x     *  layer.D
         # [B,L,E]  [B,L,E]          [B,L,E]
         y         =   y      + F.silu(  res  )
         
