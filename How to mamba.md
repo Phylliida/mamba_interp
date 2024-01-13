@@ -363,7 +363,7 @@ def mamba_conv1d(x, conv):
         # first we pad x to [B, E, 3+L+3]
         B, E, L = x.size()
         x = torch.nn.functional.pad(x, (3,3), mode='constant', value=0)
-        res = torch.zeros([B, E, 3+L])
+        accum = torch.zeros([B, E, 3+L])
         for b in range(B):
             # one filter for each component of the E-sized vectors
             for filter_i in range(E):
@@ -374,8 +374,8 @@ def mamba_conv1d(x, conv):
                     output = 0.0
                     for i, f in enumerate(filter):
                         output += x[b, filter_i, starting_pos+i]*f
-                    res[b, filter_i, starting_pos] = output+bias[filter_i]
-        return res
+                    accum[b, filter_i, starting_pos] = output+bias[filter_i]
+        return accum
 ```
 </details>
 </details>

@@ -10,7 +10,7 @@ def mamba_conv1d(x, filters, bias):
         # first we pad x to [B, D, 3+L+3]
         B, D, L = x.size()
         x = torch.nn.functional.pad(x, (3,3), mode='constant', value=0)
-        res = torch.zeros([B, D, 3+L])
+        accum = torch.zeros([B, D, 3+L])
         for b in range(B):
             # one filter for each component
             for filter_i in range(D):
@@ -21,8 +21,8 @@ def mamba_conv1d(x, filters, bias):
                     output = 0.0
                     for i, f in enumerate(filter):
                         output += x[b, filter_i, starting_pos+i]*f
-                    res[b, filter_i, starting_pos] = output+bias[filter_i]
-        return res
+                    accum[b, filter_i, starting_pos] = output+bias[filter_i]
+        return accum
  
 def test_a_bar():
     B, L, E, N = 2,3,5,7
@@ -196,4 +196,3 @@ def simple_ssm(self, x):
     ys = ys + x * D
     
     return ys
-    
