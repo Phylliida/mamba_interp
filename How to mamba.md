@@ -97,7 +97,7 @@ for layer in range(n_layer):
     layer.W_B = nn.Linear(E, N, bias=False)
     layer.W_C = nn.Linear(E, N, bias=False)
     
-    layer.A_log     = 
+    layer.A_log     = nn.Parameter(torch.log(torch.randn([E,N])))
     layer.D = nn.Parameter(torch.ones(E))
     
     ## Project back out
