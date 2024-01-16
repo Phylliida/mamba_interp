@@ -118,7 +118,7 @@ To handle language, each term $x_i$ corresponds to a token in our context. For e
 
 However, these are multi-dimensional, wheras our $x_i$ from above is one-dimensional.
 
-To address this, mamba has a seperate state space model occuring for each component. In our notation, we just add an e index to our equations:
+To address this, mamba has a seperate state space model occuring for each element. In our notation, we just add an e index to our equations:
 
 $$\stackrel{[N]}{h_{i,e}} = \stackrel{[N,N]}{\bar{A}}\stackrel{[N]}{h_{i-1,e}} + \stackrel{[N,1]}{\bar{B}}\stackrel{[1]}{x_{i,e}}$$
 
@@ -126,7 +126,7 @@ $$\stackrel{[1]}{y_{i,e}} = \stackrel{[1,N]}{C}\stackrel{[N]}{h_{i,e}}$$
 
 So there's a seperate $h_i$ for each $e$.
 
-For example, we will start with the first component:
+For example, we will start with the first element:
 
 ```
 x[:,1]=[0.86, -1.84, 1.05]
@@ -150,7 +150,7 @@ $$\stackrel{[1]}{y_{t, 1}} = \stackrel{[1,N]}{C}\stackrel{[N]}{h_{t,1}}$$
 
 To find $y_{1,1}, y_{2,1}, y_{3,1}$.
 
-Once we are done, we do this again for the next component:
+Once we are done, we do this again for the next element:
 
 ```
 x[:,2]=[-0.27, -1.79, -1.78]
@@ -164,7 +164,7 @@ To find the N-dimensional $h_{1,2}, h_{2,2}, h_{3,2}$, which we can use to find 
 
 etc.
 
-Having a seperate ssm for each element might seem strange. However, it's not entirely unreasonable because due to selection (see the Selection section below) $\Delta, A, B, C$ are a function of the entire vector, not just the current component being used.
+Having a seperate ssm for each element might seem strange. However, it's not entirely unreasonable because due to selection (see the Selection section below) $\Delta, A, B, C$ are a function of the entire vector, not just the current element being used.
   
 </details>
 
@@ -173,7 +173,7 @@ Having a seperate ssm for each element might seem strange. However, it's not ent
 
 Below, I wrote out the inner loop of Mamba in two ways. Both are equivalent, they are just different ways of looking at it.
 
-"Expanded" does a seperate state space model for each component of the $E$-sized vectors. This is what's actually happening, so I think it's useful to see it like this first.
+"Expanded" does a seperate state space model for each element of the $E$-sized vectors. This is what's actually happening, so I think it's useful to see it like this first.
 
 "Vectorized" computes all $E$ state space models at the same time. Numerically it's the same as "Expanded", but might be useful for reference (plus it's much faster)
 
@@ -194,7 +194,7 @@ $$\stackrel{[N]}{h_i} = \stackrel{[N,N]}{\bar{A}}\stackrel{[N]}{h_{i-1}} + \stac
 
 $$\stackrel{[1]}{y_i} = \stackrel{[1,N]}{C}\stackrel{[N]}{h_i}$$
 
-Really, we do this seperately for each component $e$, so I'll write this
+Really, we do this seperately for each element $e$, so I'll write this
 
 $$\stackrel{[N]}{h_{i,e}} = \stackrel{[N,N]}{\bar{A}}\stackrel{[N]}{h_{i-1,e}} + \stackrel{[N,1]}{\bar{B}}\stackrel{[1]}{x_{i,e}}$$
 
@@ -511,7 +511,7 @@ First we pad
 [0.00,  0.00,  0.00, 0.00,  0.00]
 ```
 
-Now to apply our first filter, we grab the first component of every vector
+Now to apply our first filter, we grab the first element of every vector
 
 ```python
 [* 0.00*,  0.00,  0.00, 0.00,  0.00]
@@ -564,7 +564,7 @@ Now we cut off the last two (to give us same size output as L), giving us
 [1.146, -3.63, 5.821, -2.949]
 ```
 
-For `filter 1`, we grab the second component
+For `filter 1`, we grab the second element
 ```python
 [0.00,  * 0.00*,  0.00, 0.00,  0.00]
 [0.00,  * 0.00*,  0.00, 0.00,  0.00]
@@ -603,7 +603,7 @@ def mamba_conv1d(x, conv):
         x = torch.nn.functional.pad(x, (3,3), mode='constant', value=0)
         res = torch.zeros([B, E, 3+L])
         for b in range(B):
-            # one filter for each component of the E-sized vectors
+            # one filter for each element of the E-sized vectors
             for filter_i in range(E):
                 # filter is 4 values, go across words
                 filter = filters[filter_i, 0]\
