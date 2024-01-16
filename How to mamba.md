@@ -9,7 +9,7 @@ Specifically, we have the following:
 $$\stackrel{[N]}{\dot{h}(t)} = \stackrel{[N,N]}{A}\stackrel{[N]}{h(t)} + \stackrel{[N,1]}{B}\stackrel{[1]}{x(t)}$$
 $$\stackrel{[1]}{y(t)} = \stackrel{[1,N]}{C}\stackrel{[N]}{h(t)}$$
 
-(the $[_,_]$ stuff above the variables is just specifying the dimensions)
+(the $[X,Y]$ stuff above the variables is just specifying the dimensions)
 
 This is a diffeq, where $\dot{h}(t)$ is the derivitave of $\dot{h}(t)$ with respect to time.
 
