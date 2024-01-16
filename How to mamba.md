@@ -136,31 +136,37 @@ Given these we can use
 
 $$\stackrel{[N]}{h_{i,1}} = \stackrel{[N,N]}{\bar{A}}\stackrel{[N]}{h_{i-1,1}} + \stackrel{[N,1]}{\bar{B}}\stackrel{[1]}{x_{i,1}}$$
 
-To find the N-dimensional $h_{1,1}, h_{2,1}, h_{3,1}$. (note, by convention we always start with h ($h_{0,1}$) initialized as the zero vector). Say they are (let N=3):
+To find the N-dimensional $h_{1,1}, h_{2,1}, h_{3,1}$: (note, by convention we always start with h ($h_{0,1}$) initialized as the zero vector)
 
-```python
-h_1,1=[1.0, -0.45, 2.0]
-h_2,1=[4.3, -2.3,  4.4]
-h_3,1=[0.2, -4.1, -0.2]
-```
+$$\stackrel{[N]}{h_{1,1}} = \stackrel{[N,N]}{\bar{A}}\stackrel{[N]}{0} + \stackrel{[N,1]}{\bar{B}}\stackrel{[1]}{x_{1,1}}$$
+
+$$\stackrel{[N]}{h_{2,1}} = \stackrel{[N,N]}{\bar{A}}\stackrel{[N]}{h_{1,1}} + \stackrel{[N,1]}{\bar{B}}\stackrel{[1]}{x_{2,1}}$$
+
+$$\stackrel{[N]}{h_{3,1}} = \stackrel{[N,N]}{\bar{A}}\stackrel{[N]}{h_{2,1}} + \stackrel{[N,1]}{\bar{B}}\stackrel{[1]}{x_{3,1}}$$
 
 Now we can use 
 
-$$\stackrel{[1]}{y_{t, 1}} = \stackrel{[1,N]}{C}\stackrel{[N]}{h_{t,1}}$$
+$$\stackrel{[1]}{y_{i, 1}} = \stackrel{[1,N]}{C}\stackrel{[N]}{h_{i,1}}$$
 
-To find $y_{1,1}, y_{2,1}, y_{3,1}$.
+To find $y_{1,1}, y_{2,1}, y_{3,1}$:
 
-Once we are done, we do this again for the next element:
+$$\stackrel{[1]}{y_{1, 1}} = \stackrel{[1,N]}{C}\stackrel{[N]}{h_{1,1}}$$
+
+$$\stackrel{[1]}{y_{2, 1}} = \stackrel{[1,N]}{C}\stackrel{[N]}{h_{2,1}}$$
+
+$$\stackrel{[1]}{y_{3, 1}} = \stackrel{[1,N]}{C}\stackrel{[N]}{h_{3,1}}$$
+
+Now we do the same for the next element:
 
 ```
 x[:,2]=[-0.27, -1.79, -1.78]
 ```
 
-Given these we can use
+$$\stackrel{[N]}{h_{1,2}} = \stackrel{[N,N]}{\bar{A}}\stackrel{[N]}{0} + \stackrel{[N,1]}{\bar{B}}\stackrel{[1]}{x_{1,2}}$$
 
-$$\stackrel{[N]}{h_{i,2}} = \stackrel{[N,N]}{\bar{A}}\stackrel{[N]}{h_{i-1,1}} + \stackrel{[N,1]}{\bar{B}}\stackrel{[1]}{x_{i,2}}$$
+$$\stackrel{[N]}{h_{2,2}} = \stackrel{[N,N]}{\bar{A}}\stackrel{[N]}{h_{1,2}} + \stackrel{[N,1]}{\bar{B}}\stackrel{[1]}{x_{2,2}}$$
 
-To find the N-dimensional $h_{1,2}, h_{2,2}, h_{3,2}$, which we can use to find $y_{1,2}, y_{2,2}, y_{3,2}$
+$$\stackrel{[N]}{h_{3,2}} = \stackrel{[N,N]}{\bar{A}}\stackrel{[N]}{h_{2,2}} + \stackrel{[N,1]}{\bar{B}}\stackrel{[1]}{x_{3,2}}$$
 
 etc.
 
