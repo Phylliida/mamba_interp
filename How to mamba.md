@@ -97,7 +97,7 @@ for layer in range(n_layer):
     layer.W_B = nn.Linear(E, N, bias=False)
     layer.W_C = nn.Linear(E, N, bias=False)
     
-    layer.A_log     = 
+    layer.A_log     = nn.Parameter(torch.log(torch.randn([E,N])))
     layer.D = nn.Parameter(torch.ones(E))
     
     ## Project back out
@@ -521,7 +521,7 @@ def ssm(layer, x):
 ```python
         
         # [B,L,E]  [B,L,E]    [B,L,E]    [E]
-        y         =   y      +   x     *  D
+        y         =   y      +   x     *  layer.D
         # [B,L,E]  [B,L,E]          [B,L,E]
         y         =   y      + F.silu(  res  )
         
