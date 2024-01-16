@@ -152,7 +152,7 @@ Given these we can use
 
 $$\stackrel{[N]}{h_t} = \stackrel{[N,N]}{\bar{A}}\stackrel{[N]}{h_{i-1}} + \stackrel{[N,1]}{\bar{B}}\stackrel{[1]}{x_t}$$
 
-To find the N-dimensional $h_1, h_2, h_3$. (note, by convention we always start with $h_0=$ the zero vector). Say they are (let N=3):
+To find the N-dimensional $h_1, h_2, h_3$,
 
 etc.
 
