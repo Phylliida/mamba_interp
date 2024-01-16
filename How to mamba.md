@@ -1,5 +1,229 @@
 
 <details>
+  <summary>Background</summary>
+
+The inspiration for mamba (and state space models in general) is mapping a 1D function $x(t) \in \mathbb{R}$ to a 1D function $y(t) \in \mathbb{R}$ via a N-dimensional latent space $h \in \mathbb{R}^N$.
+
+Specifically, we have the following:
+
+$$\stackrel{[N]}{\dot{h}(t)} = \stackrel{[N,N]}{A}\stackrel{[N]}{h(t)} + \stackrel{[N,1]}{B}\stackrel{[1]}{x(t)}$$
+$$\stackrel{[1]}{y(t)} = \stackrel{[1,N]}{C}\stackrel{[N]}{h(t)}$$
+
+(the $[_,_]$ stuff above the variables is just specifying the dimensions)
+
+This is a diffeq, where $\dot{h}(t)$ is the derivitave of $\dot{h}(t)$ with respect to time.
+
+If we have an initial $h_0$, we can approximate our diffeq this way:
+
+$$\stackrel{[N]}{h_t} = \stackrel{[1]}{\Delta}\stackrel{[N,N]}{A}\stackrel{[N]}{h_{i-1}} + \stackrel{[1]}{\Delta}\stackrel{[N,1]}{B}\stackrel{[1]}{x_t}$$
+$$\stackrel{[1]}{y_t} = \stackrel{[1,N]}{C}\stackrel{[N]}{h_t}$$
+
+Where $\Delta$ is a small timestep, like $0.001$.
+
+This approximation is like, if a character has a velocity $v$ and a position $p_0$, to find the position after $\Delta$ time we do $p_1 = \Delta v + p_0$, then we do $p_2 = \Delta v + p_1$, etc. In general:
+
+$$p_t = \Delta v + p_{t-1}$$
+
+We are doing the same sort of thing for $h(t)$.
+
+</details>
+
+<details>
+  <summary>Discretization</summary>
+
+Above, we have:
+
+$$\stackrel{[N]}{h_t} = \stackrel{[1]}{\Delta}\stackrel{[N,N]}{A}\stackrel{[N]}{h_{i-1}} + \stackrel{[1]}{\Delta}\stackrel{[N,1]}{B}\stackrel{[1]}{x_t}$$
+$$\stackrel{[1]}{y_t} = \stackrel{[1,N]}{C}\stackrel{[N]}{h_t}$$
+
+We can write this as
+
+$$\bar{A} = \Delta A$$
+
+$$\bar{B} = \Delta B$$
+
+So we get
+
+$$\stackrel{[N]}{h_t} = \stackrel{[N,N]}{\bar{A}}\stackrel{[N]}{h_{i-1}} + \stackrel{[N,1]}{\bar{B}}\stackrel{[1]}{x_t}$$
+$$\stackrel{[1]}{y_t} = \stackrel{[1,N]}{C}\stackrel{[N]}{h_t}$$
+
+This process of turning $A$ and $B$ into $\bar{A}$ and $\bar{B}$ is called **Discretization**.
+
+It turns out there are lots of ways to do this! Here are some options for **discretization rules**:
+
+#### Zero-Order Hold (ZOH)
+
+$$\bar{A} = \exp(\Delta A)$$
+
+$$\bar{B} = (\Delta A)^{-1} (\exp(\Delta A)-I) \Delta B$$
+
+#### Generalized Bilinear Transform (GBT)
+
+$$\bar{A} = (I-\alpha \Delta A)^{-1}(I+(1-\alpha)\Delta A)$$
+
+$$\bar{B} = \Delta (I-\alpha \Delta A)^{-1} B$$
+
+If $\alpha=0$, this is called the **Euler Method** or the **Forward Euler Method**:
+
+$$\bar{A} = I+\Delta A$$
+
+$$\bar{B} = \Delta B$$
+
+If $\alpha=\frac{1}{2}$ this is known as the **Bilinear Method**
+
+$$\bar{A} = (I-\frac{1}{2}\Delta A)^{-1}(I+\frac{1}{2}\Delta A)$$
+
+$$\bar{B} = \Delta (I-\frac{1}{2} \Delta A)^{-1} B$$
+
+If $\alpha=1$ this is known as the **Backward Euler Method**
+
+$$\bar{A} = (I-\Delta A)^{-1}$$
+
+$$\bar{B} = \Delta (I-\Delta A)^{-1} B$$
+
+## Discretization rule used in Mamba
+
+Mamba uses a discretization rule that's a mix of Zero-Order Hold and Euler Method:
+
+$$\bar{A} = \exp(\Delta A)$$
+
+(element-wise exp, *not* a matrix exponential)
+
+$$\bar{B} = \Delta B$$
+
+</details>
+
+<details>
+  <summary>But x is multi-dimensional?</summary>
+
+To summarize, in mamba we have
+
+$$\bar{A} = exp(\Delta A)$$
+
+$$\bar{B} = \Delta B$$
+
+And then we get our output $y_t$ via:
+
+$$\stackrel{[N]}{h_t} = \stackrel{[N,N]}{\bar{A}}\stackrel{[N]}{h_{i-1}} + \stackrel{[N,1]}{\bar{B}}\stackrel{[1]}{x_t}$$
+
+$$\stackrel{[1]}{y_t} = \stackrel{[1,N]}{C}\stackrel{[N]}{h_t}$$
+
+To handle language, each term $x_i$ corresponds to a token in our context. For example, if our inner dim is 5 and our context is "eat apple bees", we will get
+
+``` python
+[0.86,  -0.27, 1.65, 0.05,  2.34] "eat"
+[-1.84, -1.79, 1.10, 2.38,  1.76] "apple"
+[1.05,  -1.78, 0.16, -0.30, 1.91] "bees"
+```
+
+However, these are multi-dimensional, wheras our $x_t$ from above is one-dimensional.
+
+To address this, mamba has a seperate state space model occuring for each component. For example, we will start with the first component:
+
+```
+x=[0.86, -1.84, 1.05]
+```
+
+Given these we can use
+
+$$\stackrel{[N]}{h_t} = \stackrel{[N,N]}{\bar{A}}\stackrel{[N]}{h_{i-1}} + \stackrel{[N,1]}{\bar{B}}\stackrel{[1]}{x_t}$$
+
+To find the N-dimensional $h_1, h_2, h_3$. (note, by convention we always start with $h_0=$ the zero vector). Say they are (let N=3):
+
+```python
+h_1=[1.0, -0.45, 2.0]
+h_2=[4.3, -2.3,  4.4]
+h_3=[0.2, -4.1, -0.2]
+```
+
+Now we can use 
+
+$$\stackrel{[1]}{y_t} = \stackrel{[1,N]}{C}\stackrel{[N]}{h_t}$$
+
+To find $y_1, y_2, y_3$.
+
+Once we are done, we do this again for the next component:
+
+```
+x=[-0.27, -1.79, -1.78]
+```
+
+Given these we can use
+
+$$\stackrel{[N]}{h_t} = \stackrel{[N,N]}{\bar{A}}\stackrel{[N]}{h_{i-1}} + \stackrel{[N,1]}{\bar{B}}\stackrel{[1]}{x_t}$$
+
+To find the N-dimensional $h_1, h_2, h_3$. (note, by convention we always start with $h_0=$ the zero vector). Say they are (let N=3):
+
+etc.
+
+This might seem strange, and it is. However, it's not entirely unreasonable because due to selection (see the Selection section below) $\Delta, A, B, C$ are a function of the entire vector, not just the current component being used.
+  
+</details>
+
+<details>
+  <summary>Expanded vs Vectorized</summary>
+
+Below, I wrote out the inner loop of Mamba in two ways. Both are equivalent, they are just different ways of looking at it.
+
+"Expanded" does a seperate state space model for each component of the $E$-sized vectors. This is what's actually happening, so I think it's useful to see it like this first.
+
+"Vectorized" computes all $E$ state space models at the same time. Numerically it's the same as "Expanded", but might be useful for reference (plus it's much faster)
+
+</details>
+
+<details>
+  <summary>Selection</summary>
+
+Above, we have 
+
+$$\bar{A} = exp(\Delta A)$$
+
+$$\bar{B} = \Delta B$$
+
+And then we get our output $y_t$ via:
+
+$$\stackrel{[N]}{h_t} = \stackrel{[N,N]}{\bar{A}}\stackrel{[N]}{h_{i-1}} + \stackrel{[N,1]}{\bar{B}}\stackrel{[1]}{x_t}$$
+
+$$\stackrel{[1]}{y_t} = \stackrel{[1,N]}{C}\stackrel{[N]}{h_t}$$
+
+Really, we do this seperately for each component $e$, so I'll write this
+
+$$\stackrel{[N]}{h_{t,e}} = \stackrel{[N,N]}{\bar{A}}\stackrel{[N]}{h_{i-1,e}} + \stackrel{[N,1]}{\bar{B}}\stackrel{[1]}{x_{t,e}}$$
+
+$$\stackrel{[1]}{y_{t,e}} = \stackrel{[1,N]}{C}\stackrel{[N]}{h_{t,e}}$$
+
+The way this is specified, $\Delta, A, B$, and $C$ are fixed. The idea behind Selection is to let these vary over time, by making them dependent on $x_t$. Specifically, let:
+
+$$\stackrel{[1]}{\Delta_{t,e}} = \text{softplus}(\stackrel{[E]}{x_{t}} \cdot \stackrel{[E]}{W_{\Delta}[:,e]} + \stackrel{[1]}{B_{\Delta}[e]})$$
+
+$$\stackrel{[N]}{\bar{A_{t,e}}} = \exp(\stackrel{[1]}{\Delta_{t,e}} \stackrel{[N]}{A[e]})$$
+
+$$\stackrel{[N]}{B_{t}} = \stackrel{[N,E]}{W_B}\stackrel{[E]}{x_t}$$
+
+$$\stackrel{[N]}{\bar{B_{t,e}}} = \stackrel{[1]}{\Delta_{t,e}}\stackrel{[N]}{B_{t}}$$
+
+$$\stackrel{[N]}{C_t} = \stackrel{[N,E]}{W_C}\stackrel{[E]}{x_t}$$
+
+Where $\stackrel{[E,E]}{W_{\Delta}}, \stackrel{[E]}{B_{\Delta}}, \stackrel{[E,N]}{A}, \stackrel{[N,E]}{W_B}, \stackrel{[N,E]}{W_C}$ are learned parameters, and $\text{softplus}(x) = \log(1+e^{x})$
+
+This gives us
+
+$$\stackrel{[N]}{h_{t,e}} = \stackrel{[N,N]}{\bar{A_{t,e}}}\stackrel{[N]}{h_{t-1,e}} + \stackrel{[N,1]}{\bar{B_{t,e}}}\stackrel{[1]}{x_{t,e}}$$
+
+$$\stackrel{[1]}{y_{t,e}} = \stackrel{[1,N]}{C_t}\stackrel{[N]}{h_{t,e}}$$
+
+Or expanded out
+
+$$\stackrel{[N]}{h_{t,e}} = \exp(\stackrel{[1]}{\Delta_{t,e}} \stackrel{[N]}{A[e]})\stackrel{[N]}{h_{t-1,e}} + (\stackrel{[1]}{\Delta_{t,e}}\stackrel{[N,E]}{W_B}\stackrel{[E]}{x_t})\stackrel{[1]}{x_{t,e}}$$
+
+$$\stackrel{[1]}{y_{t,e}} = \stackrel{[1,N]}{C_t}\stackrel{[N]}{h_{t,e}}$$
+
+
+  
+</details>
+
+
+<details>
   <summary>Imports</summary>
 
 ```python
@@ -98,7 +322,7 @@ for layer in range(n_layer):
     layer.W_C = nn.Linear(E, N, bias=False)
     
     layer.A_log     = nn.Parameter(torch.log(torch.randn([E,N])))
-    layer.D = nn.Parameter(torch.ones(E))
+    layer.W_D = nn.Parameter(torch.ones(E))
     
     ## Project back out
     layer.out_proj  = nn.Linear(E, D, bias=False)
@@ -521,7 +745,7 @@ def ssm(layer, x):
 ```python
         
         # [B,L,E]  [B,L,E]    [B,L,E]    [E]
-        y         =   y      +   x     *  layer.D
+        y         =   y      +   x     *  layer.W_D
         # [B,L,E]  [B,L,E]          [B,L,E]
         y         =   y      + F.silu(  skip  )
         
@@ -584,7 +808,7 @@ class Mamba(nn.Module):
         self.norm = RMSNorm(D)
         self.lm_head  = nn.Linear(D, V, bias=False)
 
-class MambaLayer(self, args):
+class MambaLayer(nn.Module):
     def __init__(self, args):
         super().__init__()
         self.args = args
@@ -619,7 +843,7 @@ class MambaLayer(self, args):
         self.W_C = nn.Linear(E, N, bias=False)
         
         self.A_log     = nn.Parameter(torch.log(torch.randn([E,N])))
-        self.D = nn.Parameter(torch.ones(E))
+        self.W_D = nn.Parameter(torch.ones(E))
         
         ## Project back out
         self.out_proj  = nn.Linear(E, D, bias=False)
@@ -732,7 +956,7 @@ def run_mamba(mamba, input_ids):
         ###### Finish layer ######
         
         # [B,L,E]  [B,L,E]    [B,L,E]       [E]
-        y         =   y      +   x     *  layer.D
+        y         =   y      +   x     *  layer.W_D
         # [B,L,E]  [B,L,E]          [B,L,E]
         y         =   y      * F.silu(  skip  )
         
@@ -856,7 +1080,7 @@ def run_mamba(mamba, input_ids):
         ###### Finish layer ######
         
         # [B,L,E]  [B,L,E]    [B,L,E]       [E]
-        y         =   y      +   x     *  layer.D
+        y         =   y      +   x     *  layer.W_D
         # [B,L,E]  [B,L,E]          [B,L,E]
         y         =   y      * F.silu(  skip  )
         
@@ -958,6 +1182,9 @@ def load_mamba(pretrained_model_name):
             new_state_dict[key.replace("x_proj", "W_delta_1")] = W[:D_delta]
             new_state_dict[key.replace("x_proj", "W_B")] = W[D_delta:D_delta+N]
             new_state_dict[key.replace("x_proj", "W_C")] = W[D_delta+N:]
+        # we call this W_D
+        elif '.D' in key:
+            new_state_dict[key.replace(".D", ".W_D")] = value
         else:
             new_state_dict[key] = value
         
