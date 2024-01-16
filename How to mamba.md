@@ -176,7 +176,7 @@ Below, I wrote out the inner loop of Mamba in two ways. Both are equivalent, the
 
 Above, we have 
 
-$$\bar{A} = exp(\Delta A)$$
+$$\bar{A} = \exp(\Delta A)$$
 
 $$\bar{B} = \Delta B$$
 
