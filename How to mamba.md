@@ -11,7 +11,7 @@ $$\stackrel{[1]}{y(t)} = \stackrel{[1,N]}{C}\stackrel{[N]}{h(t)}$$
 
 (the $[X,Y]$ stuff above the variables is just specifying the dimensions)
 
-This is a diffeq, where $\dot{h}(t)$ is the derivitave of $\dot{h}(t)$ with respect to time.
+This is a diffeq, where $\dot{h}(t)$ is the derivitave of $h(t)$ with respect to time.
 
 If we have an initial $h_0$, we can approximate our diffeq this way:
 
