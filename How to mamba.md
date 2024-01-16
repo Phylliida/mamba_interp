@@ -224,7 +224,7 @@ Note that in mamba, they don't encode $\stackrel{[E,E]}{W_{\Delta}}$ as an $[E,E
 
 $$\stackrel{[E,E]}{W_{\Delta}}=\stackrel{[E,D_{\Delta}]}{W_{\Delta_1}}\stackrel{[D_{\Delta},E]}{W_{\Delta_2}}$$
 
-Where, for example, $E=2048$,$D_{\Delta}=64$
+Where, for example, $E=2048$, $D_{\Delta}=64$
   
 </details>
 
