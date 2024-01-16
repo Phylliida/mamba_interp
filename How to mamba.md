@@ -22,7 +22,7 @@ Where $\Delta$ is a small timestep, like $0.001$.
 
 This approximation is like, if a character has a velocity $v$ and a position $p_0$, to find the position after $\Delta$ time we do $p_1 = \Delta v + p_0$, then we do $p_2 = \Delta v + p_1$, etc. In general:
 
-$$p_t = \Delta v + p_{t-1}$$
+$$p_i = \Delta v + p_{i-1}$$
 
 We are doing the same sort of thing for $h(t)$.
 
