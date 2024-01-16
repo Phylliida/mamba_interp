@@ -15,8 +15,8 @@ This is a diffeq, where $\dot{h}(t)$ is the derivitave of $h(t)$ with respect to
 
 If we have an initial $h_0$, we can approximate our diffeq this way:
 
-$$\stackrel{[N]}{h_t} = \stackrel{[1]}{\Delta}\stackrel{[N,N]}{A}\stackrel{[N]}{h_{i-1}} + \stackrel{[1]}{\Delta}\stackrel{[N,1]}{B}\stackrel{[1]}{x_t}$$
-$$\stackrel{[1]}{y_t} = \stackrel{[1,N]}{C}\stackrel{[N]}{h_t}$$
+$$\stackrel{[N]}{h_i} = \stackrel{[1]}{\Delta}\stackrel{[N,N]}{A}\stackrel{[N]}{h_{i-1}} + \stackrel{[1]}{\Delta}\stackrel{[N,1]}{B}\stackrel{[1]}{x_i}$$
+$$\stackrel{[1]}{y_i} = \stackrel{[1,N]}{C}\stackrel{[N]}{h_i}$$
 
 Where $\Delta$ is a small timestep, like $0.001$.
 
@@ -33,8 +33,8 @@ We are doing the same sort of thing for $h(t)$.
 
 Above, we have:
 
-$$\stackrel{[N]}{h_t} = \stackrel{[1]}{\Delta}\stackrel{[N,N]}{A}\stackrel{[N]}{h_{i-1}} + \stackrel{[1]}{\Delta}\stackrel{[N,1]}{B}\stackrel{[1]}{x_t}$$
-$$\stackrel{[1]}{y_t} = \stackrel{[1,N]}{C}\stackrel{[N]}{h_t}$$
+$$\stackrel{[N]}{h_i} = \stackrel{[1]}{\Delta}\stackrel{[N,N]}{A}\stackrel{[N]}{h_{i-1}} + \stackrel{[1]}{\Delta}\stackrel{[N,1]}{B}\stackrel{[1]}{x_i}$$
+$$\stackrel{[1]}{y_i} = \stackrel{[1,N]}{C}\stackrel{[N]}{h_i}$$
 
 We can write this as
 
@@ -44,8 +44,8 @@ $$\bar{B} = \Delta B$$
 
 So we get
 
-$$\stackrel{[N]}{h_t} = \stackrel{[N,N]}{\bar{A}}\stackrel{[N]}{h_{i-1}} + \stackrel{[N,1]}{\bar{B}}\stackrel{[1]}{x_t}$$
-$$\stackrel{[1]}{y_t} = \stackrel{[1,N]}{C}\stackrel{[N]}{h_t}$$
+$$\stackrel{[N]}{h_i} = \stackrel{[N,N]}{\bar{A}}\stackrel{[N]}{h_{i-1}} + \stackrel{[N,1]}{\bar{B}}\stackrel{[1]}{x_i}$$
+$$\stackrel{[1]}{y_i} = \stackrel{[1,N]}{C}\stackrel{[N]}{h_i}$$
 
 This process of turning $A$ and $B$ into $\bar{A}$ and $\bar{B}$ is called **Discretization**.
 
@@ -102,11 +102,11 @@ $$\bar{A} = \exp(\Delta A)$$
 
 $$\bar{B} = \Delta B$$
 
-And then we get our output $y_t$ via:
+And then we get our output $y_i$ via:
 
-$$\stackrel{[N]}{h_t} = \stackrel{[N,N]}{\bar{A}}\stackrel{[N]}{h_{i-1}} + \stackrel{[N,1]}{\bar{B}}\stackrel{[1]}{x_t}$$
+$$\stackrel{[N]}{h_i} = \stackrel{[N,N]}{\bar{A}}\stackrel{[N]}{h_{i-1}} + \stackrel{[N,1]}{\bar{B}}\stackrel{[1]}{x_i}$$
 
-$$\stackrel{[1]}{y_t} = \stackrel{[1,N]}{C}\stackrel{[N]}{h_t}$$
+$$\stackrel{[1]}{y_i} = \stackrel{[1,N]}{C}\stackrel{[N]}{h_i}$$
 
 To handle language, each term $x_i$ corresponds to a token in our context. For example, if our inner dim is 5 and our context is "eat apple bees", we will get
 
@@ -116,47 +116,53 @@ To handle language, each term $x_i$ corresponds to a token in our context. For e
 [1.05,  -1.78, 0.16, -0.30, 1.91] "bees"
 ```
 
-However, these are multi-dimensional, wheras our $x_t$ from above is one-dimensional.
+However, these are multi-dimensional, wheras our $x_i$ from above is one-dimensional.
+
+We will simply add an e index to our equations:
+
+$$\stackrel{[N]}{h_{i,e}} = \stackrel{[N,N]}{\bar{A}}\stackrel{[N]}{h_{i-1,e}} + \stackrel{[N,1]}{\bar{B}}\stackrel{[1]}{x_{i,e}}$$
+
+$$\stackrel{[1]}{y_{i,e}} = \stackrel{[1,N]}{C}\stackrel{[N]}{h_{i,e}}$$
 
 To address this, mamba has a seperate state space model occuring for each component. For example, we will start with the first component:
 
 ```
-x=[0.86, -1.84, 1.05]
+x[:,1]=[0.86, -1.84, 1.05]
 ```
 
 Given these we can use
 
-$$\stackrel{[N]}{h_t} = \stackrel{[N,N]}{\bar{A}}\stackrel{[N]}{h_{i-1}} + \stackrel{[N,1]}{\bar{B}}\stackrel{[1]}{x_t}$$
+$$\stackrel{[N]}{h_{i,1}} = \stackrel{[N,N]}{\bar{A}}\stackrel{[N]}{h_{i-1,1}} + \stackrel{[N,1]}{\bar{B}}\stackrel{[1]}{x_{i,1}}$$
 
-To find the N-dimensional $h_1, h_2, h_3$. (note, by convention we always start with $h_0=$ the zero vector). Say they are (let N=3):
+To find the N-dimensional $h_{1,1}, h_{2,1}, h_{3,1}$. (note, by convention we always start with $h_0=$ the zero vector). Say they are (let N=3):
 
 ```python
-h_1=[1.0, -0.45, 2.0]
-h_2=[4.3, -2.3,  4.4]
-h_3=[0.2, -4.1, -0.2]
+h_1,1=[1.0, -0.45, 2.0]
+h_2,1=[4.3, -2.3,  4.4]
+h_3,1=[0.2, -4.1, -0.2]
 ```
 
 Now we can use 
 
-$$\stackrel{[1]}{y_t} = \stackrel{[1,N]}{C}\stackrel{[N]}{h_t}$$
+$$\stackrel{[1]}{y_{t, 1}} = \stackrel{[1,N]}{C}\stackrel{[N]}{h_{t,1}}$$
 
-To find $y_1, y_2, y_3$.
+To find $y_{1,1}, y_{2,1}, y_{3,1}$.
 
 Once we are done, we do this again for the next component:
 
 ```
-x=[-0.27, -1.79, -1.78]
+x[:,2]=[-0.27, -1.79, -1.78]
 ```
 
 Given these we can use
 
-$$\stackrel{[N]}{h_t} = \stackrel{[N,N]}{\bar{A}}\stackrel{[N]}{h_{i-1}} + \stackrel{[N,1]}{\bar{B}}\stackrel{[1]}{x_t}$$
+$$\stackrel{[N]}{h_{i,2}} = \stackrel{[N,N]}{\bar{A}}\stackrel{[N]}{h_{i-1,1}} + \stackrel{[N,1]}{\bar{B}}\stackrel{[1]}{x_{i,2}}$$
 
-To find the N-dimensional $h_1, h_2, h_3$,
+To find the N-dimensional $h_{1,2}, h_{2,2}, h_{3,2}$, which we can use to find $y_{1,2}, y_{2,2}, y_{3,2}$
 
 etc.
 
-This might seem strange. However, it's not entirely unreasonable because due to selection (see the Selection section below) $\Delta, A, B, C$ are a function of the entire vector, not just the current component being used.
+Having a seperate ssm for each element might seem strange. However, it's not entirely unreasonable because due to selection (see the Selection section below) $\Delta, A, B, C$ are a function of the entire vector, not just the current component being used.
   
 </details>
 
@@ -182,43 +188,43 @@ $$\bar{B} = \Delta B$$
 
 And then we get our output $y_t$ via:
 
-$$\stackrel{[N]}{h_t} = \stackrel{[N,N]}{\bar{A}}\stackrel{[N]}{h_{i-1}} + \stackrel{[N,1]}{\bar{B}}\stackrel{[1]}{x_t}$$
+$$\stackrel{[N]}{h_i} = \stackrel{[N,N]}{\bar{A}}\stackrel{[N]}{h_{i-1}} + \stackrel{[N,1]}{\bar{B}}\stackrel{[1]}{x_i}$$
 
-$$\stackrel{[1]}{y_t} = \stackrel{[1,N]}{C}\stackrel{[N]}{h_t}$$
+$$\stackrel{[1]}{y_i} = \stackrel{[1,N]}{C}\stackrel{[N]}{h_i}$$
 
 Really, we do this seperately for each component $e$, so I'll write this
 
-$$\stackrel{[N]}{h_{t,e}} = \stackrel{[N,N]}{\bar{A}}\stackrel{[N]}{h_{i-1,e}} + \stackrel{[N,1]}{\bar{B}}\stackrel{[1]}{x_{t,e}}$$
+$$\stackrel{[N]}{h_{i,e}} = \stackrel{[N,N]}{\bar{A}}\stackrel{[N]}{h_{i-1,e}} + \stackrel{[N,1]}{\bar{B}}\stackrel{[1]}{x_{i,e}}$$
 
-$$\stackrel{[1]}{y_{t,e}} = \stackrel{[1,N]}{C}\stackrel{[N]}{h_{t,e}}$$
+$$\stackrel{[1]}{y_{i,e}} = \stackrel{[1,N]}{C}\stackrel{[N]}{h_{i,e}}$$
 
 The way this is specified, $\Delta, A, B$, and $C$ are fixed. The idea behind Selection is to let these vary over time, by making them dependent on $x_t$. Specifically, let:
 
-$$\stackrel{[1]}{\Delta_{t,e}} = \text{softplus}(\stackrel{[E]}{x_{t}} \cdot \stackrel{[E]}{W_{\Delta}[:,e]} + \stackrel{[1]}{B_{\Delta}[e]})$$
+$$\stackrel{[1]}{\Delta_{i,e}} = \text{softplus}(\stackrel{[E]}{x_{i}} \cdot \stackrel{[E]}{W_{\Delta}[:,e]} + \stackrel{[1]}{B_{\Delta}[e]})$$
 
-$$\stackrel{[N]}{\bar{A_{t,e}}} = \exp(\stackrel{[1]}{\Delta_{t,e}} \stackrel{[N]}{A[e]})$$
+$$\stackrel{[N]}{\bar{A_{i,e}}} = \exp(\stackrel{[1]}{\Delta_{i,e}} \stackrel{[N]}{A[e]})$$
 
-$$\stackrel{[N]}{B_{t}} = \stackrel{[N,E]}{W_B}\stackrel{[E]}{x_t}$$
+$$\stackrel{[N]}{B_{i}} = \stackrel{[N,E]}{W_B}\stackrel{[E]}{x_i}$$
 
-$$\stackrel{[N]}{\bar{B_{t,e}}} = \stackrel{[1]}{\Delta_{t,e}}\stackrel{[N]}{B_{t}}$$
+$$\stackrel{[N]}{\bar{B_{i,e}}} = \stackrel{[1]}{\Delta_{i,e}}\stackrel{[N]}{B_{i}}$$
 
-$$\stackrel{[N]}{C_t} = \stackrel{[N,E]}{W_C}\stackrel{[E]}{x_t}$$
+$$\stackrel{[N]}{C_i} = \stackrel{[N,E]}{W_C}\stackrel{[E]}{x_i}$$
 
 Where $\stackrel{[E,E]}{W_{\Delta}}, \stackrel{[E]}{B_{\Delta}}, \stackrel{[E,N]}{A}, \stackrel{[N,E]}{W_B}, \stackrel{[N,E]}{W_C}$ are learned parameters, and $\text{softplus}(x) = \log(1+e^{x})$
 
 This gives us
 
-$$\stackrel{[N]}{h_{t,e}} = \stackrel{[N]}{\bar{A_{t,e}}}\stackrel{[N]}{h_{t-1,e}} + \stackrel{[N,1]}{\bar{B_{t,e}}}\stackrel{[1]}{x_{t,e}}$$
+$$\stackrel{[N]}{h_{i,e}} = \stackrel{[N]}{\bar{A_{i,e}}}\stackrel{[N]}{h_{i-1,e}} + \stackrel{[N,1]}{\bar{B_{t,e}}}\stackrel{[1]}{x_{i,e}}$$
 
-$$\stackrel{[1]}{y_{t,e}} = \stackrel{[1,N]}{C_t}\stackrel{[N]}{h_{t,e}}$$
+$$\stackrel{[1]}{y_{i,e}} = \stackrel{[1,N]}{C_i}\stackrel{[N]}{h_{i,e}}$$
 
-You may have noticed that $\bar{A}$ is now a vector $([N])$ instead of a matrix ($[N,N]$). I'm not sure why they do it that way, but that's what they do. This means that $$\stackrel{[N]}{\bar{A_{t,e}}}\stackrel{[N]}{h_{t-1,e}}$$ is just an element-wise product (hadamard product)
+You may have noticed that $\bar{A}$ is now a vector $([N])$ instead of a matrix ($[N,N]$). I'm not sure why they do it that way, but that's what they do. This means that $$\stackrel{[N]}{\bar{A_{i,e}}}\stackrel{[N]}{h_{i-1,e}}$$ is just an element-wise product (hadamard product)
 
 Anyway, expanded out, this gives us
 
-$$\stackrel{[N]}{h_{t,e}} = \exp(\stackrel{[1]}{\Delta_{t,e}} \stackrel{[N]}{A[e]})\stackrel{[N]}{h_{t-1,e}} + (\stackrel{[1]}{\Delta_{t,e}}\stackrel{[N,E]}{W_B}\stackrel{[E]}{x_t})\stackrel{[1]}{x_{t,e}}$$
+$$\stackrel{[N]}{h_{i,e}} = \exp(\stackrel{[1]}{\Delta_{i,e}} \stackrel{[N]}{A[e]})\stackrel{[N]}{h_{i-1,e}} + (\stackrel{[1]}{\Delta_{i,e}}\stackrel{[N,E]}{W_B}\stackrel{[E]}{x_i})\stackrel{[1]}{x_{i,e}}$$
 
-$$\stackrel{[1]}{y_{t,e}} = \stackrel{[1,N]}{C_t}\stackrel{[N]}{h_{t,e}}$$
+$$\stackrel{[1]}{y_{i,e}} = \stackrel{[1,N]}{C_i}\stackrel{[N]}{h_{i,e}}$$
 
 Note that in mamba, they don't encode $\stackrel{[E,E]}{W_{\Delta}}$ as an $[E,E]$ matrix. Instead, it is encoded as two smaller matrices:
 
