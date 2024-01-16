@@ -78,7 +78,7 @@ mamba.lm_head   = nn.Linear(D, V, bias=False)
 for layer in range(n_layer):
     ## Process inputs
     layer.norm      = RMSNorm(D)
-    layer.res_proj  = nn.Linear(D, E, bias=False)
+    layer.skip_proj = nn.Linear(D, E, bias=False)
     layer.in_proj   = nn.Linear(D, E, bias=False)
     
     ## Conv
@@ -135,7 +135,7 @@ def run_mamba(mamba, input_ids):
         # [B,L,D]             [B,L,D]
         x         = layer.norm(  x  )
         # [B,L,E]         [D->E]  [B,L,D]
-        res       = layer.res_proj(  x  ) # no bias
+        skip      = layer.skip_proj(  x  ) # no bias
         # [B,L,E]         [D->E] [B,L,D]
         x         = layer.in_proj(  x  ) # no bias
         
@@ -523,7 +523,7 @@ def ssm(layer, x):
         # [B,L,E]  [B,L,E]    [B,L,E]    [E]
         y         =   y      +   x     *  layer.D
         # [B,L,E]  [B,L,E]          [B,L,E]
-        y         =   y      + F.silu(  res  )
+        y         =   y      + F.silu(  skip  )
         
         # [B,L,D]          [E->D]  [B,L,E]
         y         = layer.out_proj(   y   ) # no bias
@@ -599,7 +599,7 @@ class MambaLayer(self, args):
         
         ## Process inputs
         self.norm      = RMSNorm(D)
-        self.res_proj  = nn.Linear(D, E, bias=False)
+        self.skip_proj = nn.Linear(D, E, bias=False)
         self.in_proj   = nn.Linear(D, E, bias=False)
         
         ## Conv
@@ -652,7 +652,7 @@ def run_mamba(mamba, input_ids):
         # [B,L,D]             [B,L,D]
         x         = layer.norm(  x  )
         # [B,L,E]         [D->E]  [B,L,D]
-        res       = layer.res_proj(  x  ) # no bias
+        skip      = layer.skip_proj(  x  ) # no bias
         # [B,L,E]         [D->E] [B,L,D]
         x         = layer.in_proj(  x  ) # no bias
         
@@ -734,7 +734,7 @@ def run_mamba(mamba, input_ids):
         # [B,L,E]  [B,L,E]    [B,L,E]       [E]
         y         =   y      +   x     *  layer.D
         # [B,L,E]  [B,L,E]          [B,L,E]
-        y         =   y      * F.silu(  res  )
+        y         =   y      * F.silu(  skip  )
         
         # [B,L,D]          [E->D]  [B,L,E]
         y         = layer.out_proj(   y   ) # no bias
@@ -782,7 +782,7 @@ def run_mamba(mamba, input_ids):
         # [B,L,D]             [B,L,D]
         x         = layer.norm(  x  )
         # [B,L,E]         [D->E]  [B,L,D]
-        res       = layer.res_proj(  x  ) # no bias
+        skip      = layer.skip_proj(  x  ) # no bias
         # [B,L,E]         [D->E] [B,L,D]
         x         = layer.in_proj(  x  ) # no bias
         
@@ -858,7 +858,7 @@ def run_mamba(mamba, input_ids):
         # [B,L,E]  [B,L,E]    [B,L,E]       [E]
         y         =   y      +   x     *  layer.D
         # [B,L,E]  [B,L,E]          [B,L,E]
-        y         =   y      * F.silu(  res  )
+        y         =   y      * F.silu(  skip  )
         
         # [B,L,D]          [E->D]  [B,L,E]
         y         = layer.out_proj(   y   ) # no bias
@@ -945,7 +945,7 @@ def load_mamba(pretrained_model_name):
         # we split in_proj into two seperate things
         if 'in_proj' in key:
             new_state_dict[key] = value[:E]
-            new_state_dict[key.replace("in_proj", "res_proj")] = value[E:]
+            new_state_dict[key.replace("in_proj", "skip_proj")] = value[E:]
         # we renamed these
         elif 'dt_proj' in key:
             new_state_dict[key.replace("dt_proj", "W_delta_2")] = value
