@@ -753,7 +753,7 @@ def ssm(layer, x):
         # [B,L,E]  [B,L,E]    [B,L,E]    [E]
         y         =   y      +   x     *  layer.W_D
         # [B,L,E]  [B,L,E]          [B,L,E]
-        y         =   y      + F.silu(  skip  )
+        y         =   y      * F.silu(  skip  )
         
         # [B,L,D]          [E->D]  [B,L,E]
         y         = layer.out_proj(   y   ) # no bias
