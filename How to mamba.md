@@ -219,6 +219,12 @@ Anyway, expanded out, this gives us
 $$\stackrel{[N]}{h_{t,e}} = \exp(\stackrel{[1]}{\Delta_{t,e}} \stackrel{[N]}{A[e]})\stackrel{[N]}{h_{t-1,e}} + (\stackrel{[1]}{\Delta_{t,e}}\stackrel{[N,E]}{W_B}\stackrel{[E]}{x_t})\stackrel{[1]}{x_{t,e}}$$
 
 $$\stackrel{[1]}{y_{t,e}} = \stackrel{[1,N]}{C_t}\stackrel{[N]}{h_{t,e}}$$
+
+Note that in mamba, they don't encode $\stackrel{[E,E]}{W_{\Delta}}$ as an $[E,E]$ matrix. Instead, it is encoded as two smaller matrices:
+
+$$\stackrel{[E,E]}{W_{\Delta}}=\stackrel{[E,D_{\Delta}]}{W_{\Delta_1}}\stackrel{[D_{\Delta},E]}{W_{\Delta_2}}$$
+
+Where, for example, $E=2048$,$D_{\Delta}=64$
   
 </details>
 
