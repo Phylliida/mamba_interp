@@ -156,7 +156,7 @@ To find the N-dimensional $h_1, h_2, h_3$,
 
 etc.
 
-This might seem strange, and it is. However, it's not entirely unreasonable because due to selection (see the Selection section below) $\Delta, A, B, C$ are a function of the entire vector, not just the current component being used.
+This might seem strange. However, it's not entirely unreasonable because due to selection (see the Selection section below) $\Delta, A, B, C$ are a function of the entire vector, not just the current component being used.
   
 </details>
 
