@@ -208,17 +208,17 @@ Where $\stackrel{[E,E]}{W_{\Delta}}, \stackrel{[E]}{B_{\Delta}}, \stackrel{[E,N]
 
 This gives us
 
-$$\stackrel{[N]}{h_{t,e}} = \stackrel{[N,N]}{\bar{A_{t,e}}}\stackrel{[N]}{h_{t-1,e}} + \stackrel{[N,1]}{\bar{B_{t,e}}}\stackrel{[1]}{x_{t,e}}$$
+$$\stackrel{[N]}{h_{t,e}} = \stackrel{[N]}{\bar{A_{t,e}}}\stackrel{[N]}{h_{t-1,e}} + \stackrel{[N,1]}{\bar{B_{t,e}}}\stackrel{[1]}{x_{t,e}}$$
 
 $$\stackrel{[1]}{y_{t,e}} = \stackrel{[1,N]}{C_t}\stackrel{[N]}{h_{t,e}}$$
 
-Or expanded out
+You may have noticed that $\bar{A}$ is now a vector $([N])$ instead of a matrix ($[N,N]$). I'm not sure why they do it that way, but that's what they do. This means that $$\stackrel{[N]}{\bar{A_{t,e}}}\stackrel{[N]}{h_{t-1,e}}$$ is just an element-wise product (hadamard product)
+
+Anyway, expanded out, this gives us
 
 $$\stackrel{[N]}{h_{t,e}} = \exp(\stackrel{[1]}{\Delta_{t,e}} \stackrel{[N]}{A[e]})\stackrel{[N]}{h_{t-1,e}} + (\stackrel{[1]}{\Delta_{t,e}}\stackrel{[N,E]}{W_B}\stackrel{[E]}{x_t})\stackrel{[1]}{x_{t,e}}$$
 
 $$\stackrel{[1]}{y_{t,e}} = \stackrel{[1,N]}{C_t}\stackrel{[N]}{h_{t,e}}$$
-
-
   
 </details>
 
