@@ -98,7 +98,7 @@ $$\bar{B} = \Delta B$$
 
 To summarize, in mamba we have
 
-$$\bar{A} = exp(\Delta A)$$
+$$\bar{A} = \exp(\Delta A)$$
 
 $$\bar{B} = \Delta B$$
 
