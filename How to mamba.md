@@ -81,7 +81,7 @@ $$\bar{A} = (I-\Delta A)^{-1}$$
 
 $$\bar{B} = \Delta (I-\Delta A)^{-1} B$$
 
-## Discretization rule used in Mamba
+#### Discretization rule used in Mamba
 
 Mamba uses a discretization rule that's a mix of Zero-Order Hold and Euler Method:
 
