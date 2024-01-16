@@ -168,6 +168,13 @@ $$\stackrel{[N]}{h_{2,2}} = \stackrel{[N,N]}{\bar{A}}\stackrel{[N]}{h_{1,2}} + \
 
 $$\stackrel{[N]}{h_{3,2}} = \stackrel{[N,N]}{\bar{A}}\stackrel{[N]}{h_{2,2}} + \stackrel{[N,1]}{\bar{B}}\stackrel{[1]}{x_{3,2}}$$
 
+
+$$\stackrel{[1]}{y_{1, 2}} = \stackrel{[1,N]}{C}\stackrel{[N]}{h_{1,2}}$$
+
+$$\stackrel{[1]}{y_{2, 2}} = \stackrel{[1,N]}{C}\stackrel{[N]}{h_{2,2}}$$
+
+$$\stackrel{[1]}{y_{3, 2}} = \stackrel{[1,N]}{C}\stackrel{[N]}{h_{3,2}}$$
+
 etc.
 
 Having a seperate ssm for each element might seem strange. However, it's not entirely unreasonable because due to selection (see the Selection section below) $\Delta, A, B, C$ are a function of the entire vector, not just the current element being used.
