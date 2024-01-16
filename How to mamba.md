@@ -136,7 +136,7 @@ Given these we can use
 
 $$\stackrel{[N]}{h_{i,1}} = \stackrel{[N,N]}{\bar{A}}\stackrel{[N]}{h_{i-1,1}} + \stackrel{[N,1]}{\bar{B}}\stackrel{[1]}{x_{i,1}}$$
 
-To find the N-dimensional $h_{1,1}, h_{2,1}, h_{3,1}$. (note, by convention we always start with $h_0=$ the zero vector). Say they are (let N=3):
+To find the N-dimensional $h_{1,1}, h_{2,1}, h_{3,1}$. (note, by convention we always start with h ($h_{0,1}$) initialized as the zero vector). Say they are (let N=3):
 
 ```python
 h_1,1=[1.0, -0.45, 2.0]
