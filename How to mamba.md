@@ -1224,7 +1224,7 @@ def load_mamba(pretrained_model_name):
 
 
 </details>
-
+</details>
 
 Sources:
 
