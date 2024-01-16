@@ -118,13 +118,15 @@ To handle language, each term $x_i$ corresponds to a token in our context. For e
 
 However, these are multi-dimensional, wheras our $x_i$ from above is one-dimensional.
 
-We will simply add an e index to our equations:
+To address this, mamba has a seperate state space model occuring for each component. In our notation, we just add an e index to our equations:
 
 $$\stackrel{[N]}{h_{i,e}} = \stackrel{[N,N]}{\bar{A}}\stackrel{[N]}{h_{i-1,e}} + \stackrel{[N,1]}{\bar{B}}\stackrel{[1]}{x_{i,e}}$$
 
 $$\stackrel{[1]}{y_{i,e}} = \stackrel{[1,N]}{C}\stackrel{[N]}{h_{i,e}}$$
 
-To address this, mamba has a seperate state space model occuring for each component. For example, we will start with the first component:
+So there's a seperate $h_i$ for each $e$.
+
+For example, we will start with the first component:
 
 ```
 x[:,1]=[0.86, -1.84, 1.05]
