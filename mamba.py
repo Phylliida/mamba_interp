@@ -9,6 +9,8 @@ from einops import rearrange, repeat, einsum
 from dataclasses import dataclass
 import json
 import math
+import copy
+import itertools
 from transformers.utils import WEIGHTS_NAME, CONFIG_NAME
 from transformers.utils.hub import cached_file
 
@@ -309,6 +311,39 @@ class MambaLayer(nn.Module):
         
         return resid
         
+class FixupParamHooks(object):
+    def __init__(self, hooked_module, params_possabilities):
+        self.hooked_module = hooked_module
+        self.params_possabilities = list(params_possabilities) # we need to use it multiple times, in case its an iterator
+    
+    def __enter__(self):
+        self.backup_hook_dict = dict(list(self.hooked_module.hook_dict.items()))
+        self.backup_mod_dict = dict(list(self.hooked_module.mod_dict.items()))
+        
+        for hook_name, hook in list(self.hooked_module.hook_dict.items()):
+            if hasattr(hook, "has_params") and hook.has_params:
+                del self.hooked_module.hook_dict[hook_name]
+                for params in self.params_possabilities:
+                    s = "_".join([str(p) for p in params])
+                    new_key = hook_name + "params" + s
+                    self.hooked_module.hook_dict[new_key] = hook
+                    self.hooked_module.mod_dict[new_key] = hook 
+                    
+        return self
+
+    def __exit__(self, type, value, tb):
+        self.hooked_module.hooks_dict = self.backup_hook_dict
+        self.hooked_module.mod_dict = self.backup_mod_dict
+
+def tryStuff(hooked_mamba, input_ids):
+    if type(input_ids) is str:
+        input_ids = hooked_mamba.tokenizer(input_ids, return_tensors='pt')['input_ids'] # they passed in a prompt and not input_ids
+    B, L = input_ids.size()
+   
+    with FixupParamHooks(hooked_module=hooked_mamba, params_possabilities=itertools.product(range(B), range(L))):
+        return hooked_mamba.run_with_cache(input_ids)
+
+        
 class HookedMamba(HookedRootModule):
     def __init__(self, args):
         super().__init__()
@@ -333,13 +368,12 @@ class HookedMamba(HookedRootModule):
 
         # setup hooks
         self.setup()
-        
+
     
     def forward(self, input_ids):
-    
         if type(input_ids) is str:
             input_ids = self.tokenizer(input_ids, return_tensors='pt')['input_ids'] # they passed in a prompt and not input_ids
-    
+        
         args = self.args
         D = args.d_model
         E = args.d_inner
@@ -429,6 +463,17 @@ class HookedMambaLayer(nn.Module):
         self.hook_h = HookPoint()     # (b, l, [E,N])
         self.hook_C = HookPoint()     # (b, l, [N])
         self.hook_y_l = HookPoint()   # (b, l, [E])
+        
+        for hook in [self.hook_x_l,
+            self.hook_delta,
+            self.hook_A_bar,
+            self.hook_B,
+            self.hook_B_bar,
+            self.hook_h,
+            self.hook_C,
+            self.hook_y_l
+            ]:
+            hook.has_params = True
                 
         self.hook_ssm_output = HookPoint() # [B,L,E]
 
