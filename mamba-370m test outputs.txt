@@ -1,0 +1,435 @@
+-------- Greater Than --------
+totals:
+  total for top_1:
+    +: 290 / 300 = 0.9666666666666667
+    -: 0 / 300 = 0.0
+    o: 10 / 300 = 0.03333333333333333
+  total for top_2:
+    +: 286 / 300 = 0.9533333333333334
+    -: 0 / 300 = 0.0
+    o: 14 / 300 = 0.04666666666666667
+  total for top_3:
+    +: 278 / 300 = 0.9266666666666666
+    -: 9 / 300 = 0.03
+    o: 13 / 300 = 0.043333333333333335
+  total for top_4:
+    +: 281 / 300 = 0.9366666666666666
+    -: 13 / 300 = 0.043333333333333335
+    o: 6 / 300 = 0.02
+  total for top_5:
+    +: 277 / 300 = 0.9233333333333333
+    -: 18 / 300 = 0.06
+    o: 5 / 300 = 0.016666666666666666
+
+failures:
+  other    for top_1
+    The work lasted from the year 1797 to 17
+      99 with pr 0.5527 relative pr nan
+    The construction lasted from the year 1488 to 14
+      99 with pr 0.1013 relative pr nan
+    The kingdom lasted from the year 1277 to 12
+      99 with pr 0.1843 relative pr nan
+    The patrols lasted from the year 1705 to 17
+      07 with pr 0.0526 relative pr nan
+    The disagreement lasted from the year 1704 to 17
+      05 with pr 0.0500 relative pr nan
+    The contract lasted from the year 1497 to 14
+      99 with pr 0.4180 relative pr nan
+    The insurgency lasted from the year 1786 to 17
+      99 with pr 0.1523 relative pr nan
+    The outcome lasted from the year 1705 to 17
+      06 with pr 0.0402 relative pr nan
+    The conspiracy lasted from the year 1703 to 17
+      05 with pr 0.0593 relative pr nan
+    The consultation lasted from the year 1706 to 17
+      07 with pr 0.1007 relative pr nan
+  other    for top_2
+    The project lasted from the year 1707 to 17
+      09 with pr 0.0493 relative pr nan
+    The plague lasted from the year 1697 to 16
+      99 with pr 0.2864 relative pr nan
+    The quest lasted from the year 1489 to 14
+      99 with pr 0.1268 relative pr nan
+    The contact lasted from the year 1597 to 15
+      99 with pr 0.4121 relative pr nan
+    The patrols lasted from the year 1705 to 17
+      08 with pr 0.0464 relative pr nan
+    The disagreement lasted from the year 1704 to 17
+      06 with pr 0.0484 relative pr nan
+    The unemployment lasted from the year 1697 to 16
+      99 with pr 0.2708 relative pr nan
+    The shift lasted from the year 1697 to 16
+      99 with pr 0.3672 relative pr nan
+    The negotiation lasted from the year 1297 to 12
+      99 with pr 0.4180 relative pr nan
+    The tests lasted from the year 1364 to 13
+      99 with pr 0.3279 relative pr nan
+    The conspiracy lasted from the year 1703 to 17
+      07 with pr 0.0524 relative pr nan
+    The progress lasted from the year 1297 to 12
+      99 with pr 0.4172 relative pr nan
+    The growth lasted from the year 1795 to 17
+      99 with pr 0.2332 relative pr nan
+    The consultation lasted from the year 1706 to 17
+      08 with pr 0.0737 relative pr nan
+  failures for top_3
+    The work lasted from the year 1797 to 17
+      97 with pr 0.0322 relative pr 0.0731
+    The plague lasted from the year 1697 to 16
+      97 with pr 0.0702 relative pr 0.0988
+    The contact lasted from the year 1597 to 15
+      97 with pr 0.0496 relative pr 0.0848
+    The unemployment lasted from the year 1697 to 16
+      97 with pr 0.1183 relative pr 0.1646
+    The contract lasted from the year 1497 to 14
+      97 with pr 0.1229 relative pr 0.2120
+    The shift lasted from the year 1697 to 16
+      97 with pr 0.0988 relative pr 0.1569
+    The negotiation lasted from the year 1297 to 12
+      97 with pr 0.0548 relative pr 0.0945
+    The tests lasted from the year 1364 to 13
+      64 with pr 0.1700 relative pr 0.2612
+    The progress lasted from the year 1297 to 12
+      97 with pr 0.0725 relative pr 0.1247
+  other    for top_3
+    The voyage lasted from the year 1696 to 16
+      99 with pr 0.2854 relative pr nan
+    The trial lasted from the year 1494 to 14
+      99 with pr 0.1735 relative pr nan
+    The deal lasted from the year 1696 to 16
+      99 with pr 0.2391 relative pr nan
+    The test lasted from the year 1596 to 15
+      99 with pr 0.2053 relative pr nan
+    The patrols lasted from the year 1705 to 17
+      06 with pr 0.0436 relative pr nan
+    The cooperation lasted from the year 1696 to 16
+      99 with pr 0.2585 relative pr nan
+    The disagreement lasted from the year 1704 to 17
+      07 with pr 0.0455 relative pr nan
+    The trip lasted from the year 1248 to 12
+      50 with pr 0.0497 relative pr nan
+    The invasion lasted from the year 1790 to 17
+      99 with pr 0.1194 relative pr nan
+    The outcome lasted from the year 1705 to 17
+      07 with pr 0.0366 relative pr nan
+    The conspiracy lasted from the year 1703 to 17
+      06 with pr 0.0524 relative pr nan
+    The strikes lasted from the year 1247 to 12
+      50 with pr 0.0768 relative pr nan
+    The consultation lasted from the year 1706 to 17
+      09 with pr 0.0650 relative pr nan
+  failures for top_4
+    The voyage lasted from the year 1696 to 16
+      96 with pr 0.0249 relative pr 0.0350
+    The work lasted from the year 1797 to 17
+      96 with pr 0.0092 relative pr 0.0209
+    The plague lasted from the year 1697 to 16
+      96 with pr 0.0149 relative pr 0.0210
+    The deal lasted from the year 1696 to 16
+      96 with pr 0.0546 relative pr 0.0723
+    The test lasted from the year 1596 to 15
+      96 with pr 0.0548 relative pr 0.0693
+    The contact lasted from the year 1597 to 15
+      96 with pr 0.0155 relative pr 0.0265
+    The cooperation lasted from the year 1696 to 16
+      96 with pr 0.0551 relative pr 0.0746
+    The unemployment lasted from the year 1697 to 16
+      96 with pr 0.0297 relative pr 0.0413
+    The contract lasted from the year 1497 to 14
+      96 with pr 0.0299 relative pr 0.0515
+    The shift lasted from the year 1697 to 16
+      96 with pr 0.0217 relative pr 0.0345
+    The negotiation lasted from the year 1297 to 12
+      96 with pr 0.0163 relative pr 0.0282
+    The tests lasted from the year 1364 to 13
+      60 with pr 0.0223 relative pr 0.0343
+    The progress lasted from the year 1297 to 12
+      96 with pr 0.0251 relative pr 0.0431
+  other    for top_4
+    The project lasted from the year 1707 to 17
+      08 with pr 0.0450 relative pr nan
+    The retaliation lasted from the year 1595 to 15
+      99 with pr 0.1833 relative pr nan
+    The disagreement lasted from the year 1704 to 17
+      08 with pr 0.0377 relative pr nan
+    The abduction lasted from the year 1795 to 17
+      99 with pr 0.1816 relative pr nan
+    The outcome lasted from the year 1705 to 17
+      08 with pr 0.0355 relative pr nan
+    The conspiracy lasted from the year 1703 to 17
+      04 with pr 0.0408 relative pr nan
+  failures for top_5
+    The voyage lasted from the year 1696 to 16
+      95 with pr 0.0036 relative pr 0.0051
+    The work lasted from the year 1797 to 17
+      95 with pr 0.0022 relative pr 0.0050
+    The investigation lasted from the year 1332 to 13
+      32 with pr 0.0574 relative pr 0.0594
+    The plague lasted from the year 1697 to 16
+      95 with pr 0.0066 relative pr 0.0093
+    The deal lasted from the year 1696 to 16
+      95 with pr 0.0069 relative pr 0.0091
+    The retaliation lasted from the year 1595 to 15
+      95 with pr 0.0195 relative pr 0.0239
+    The test lasted from the year 1596 to 15
+      95 with pr 0.0107 relative pr 0.0135
+    The engagement lasted from the year 1325 to 13
+      25 with pr 0.0629 relative pr 0.0648
+    The contact lasted from the year 1597 to 15
+      95 with pr 0.0043 relative pr 0.0074
+    The cooperation lasted from the year 1696 to 16
+      95 with pr 0.0093 relative pr 0.0126
+    The unemployment lasted from the year 1697 to 16
+      95 with pr 0.0076 relative pr 0.0106
+    The contract lasted from the year 1497 to 14
+      95 with pr 0.0093 relative pr 0.0160
+    The shift lasted from the year 1697 to 16
+      95 with pr 0.0067 relative pr 0.0107
+    The abduction lasted from the year 1795 to 17
+      95 with pr 0.0274 relative pr 0.0336
+    The negotiation lasted from the year 1297 to 12
+      95 with pr 0.0042 relative pr 0.0073
+    The tests lasted from the year 1364 to 13
+      19 with pr 0.0123 relative pr 0.0189
+    The progress lasted from the year 1297 to 12
+      95 with pr 0.0088 relative pr 0.0152
+    The growth lasted from the year 1795 to 17
+      95 with pr 0.0422 relative pr 0.0555
+  other    for top_5
+    The patrols lasted from the year 1705 to 17
+      09 with pr 0.0397 relative pr nan
+    The quest lasted from the year 1340 to 13
+      99 with pr 0.0614 relative pr nan
+    The tradition lasted from the year 1593 to 15
+      99 with pr 0.1248 relative pr nan
+    The conspiracy lasted from the year 1703 to 17
+      09 with pr 0.0338 relative pr nan
+    The test lasted from the year 1794 to 17
+      99 with pr 0.1472 relative pr nan
+
+
+-------- IOI --------
+-------- IOI ABC --------
+totals:
+  total for top_1:
+    +: 298 / 300 = 0.9933333333333333
+    -: 2 / 300 = 0.006666666666666667
+    o: 0 / 300 = 0.0
+
+failures:
+  failures for top_1
+    Then, Kimberly, Andrew and Rebecca went to the house. Andrew and Rebecca gave a snack to
+       Andrew with pr 0.0166 relative pr 0.5649
+    Afterwards Stephen, Jessica and Benjamin went to the school. Jessica and Benjamin gave a ring to
+       Jessica with pr 0.0299 relative pr 0.4673
+-------- IOI BAC --------
+totals:
+  total for top_1:
+    +: 288 / 300 = 0.96
+    -: 12 / 300 = 0.04
+    o: 0 / 300 = 0.0
+
+failures:
+  failures for top_1
+    When Bryan, Christopher and Patrick arrived at the hospital, Bryan and Patrick gave a bone to
+       Bryan with pr 0.0657 relative pr 0.6064
+    Friends Nicole, Mary and Lindsey went to the school. Nicole and Lindsey gave a basketball to
+       Nicole with pr 0.0249 relative pr 0.5640
+    When Sara, Jennifer and Stephanie arrived at the store, Sara and Stephanie gave a snack to
+       Sara with pr 0.0205 relative pr 0.5322
+    Then, Courtney, Allison and Jessica went to the school. Courtney and Jessica gave a ring to
+       Court with pr 0.0356 relative pr 0.4919
+    Friends Emily, Lindsey and Michelle went to the house. Emily and Michelle gave a necklace to
+       Emily with pr 0.1080 relative pr 0.5068
+    Then, Andrew, Kimberly and Rebecca went to the house. Andrew and Rebecca gave a snack to
+       Andrew with pr 0.0147 relative pr 0.5039
+    Friends Samuel, James and Jose went to the hospital. Samuel and Jose gave a bone to
+       Samuel with pr 0.1115 relative pr 0.8438
+    Afterwards Jessica, Stephen and Benjamin went to the school. Jessica and Benjamin gave a ring to
+       Jessica with pr 0.0347 relative pr 0.4648
+    Afterwards Daniel, Jason and Jose went to the school. Daniel and Jose gave a ring to
+       Daniel with pr 0.0503 relative pr 0.7734
+    Afterwards Eric, Gregory and Samuel went to the hospital. Eric and Samuel gave a bone to
+       Eric with pr 0.0233 relative pr 0.5898
+    Friends Paul, Timothy and Cody went to the school. Paul and Cody gave a bone to
+       Paul with pr 0.0035 relative pr 0.5073
+    Afterwards Daniel, Travis and Paul went to the school. Daniel and Paul gave a ring to
+       Daniel with pr 0.0317 relative pr 0.7563
+-------- IOI BABA --------
+totals:
+  total for top_1:
+    +: 297 / 300 = 0.99
+    -: 3 / 300 = 0.01
+    o: 0 / 300 = 0.0
+
+failures:
+  failures for top_1
+    When Jacob and Timothy got a ring at the garden, Jacob decided to give the ring to
+       Jacob with pr 0.0185 relative pr 0.6060
+    After the lunch, Brian and Bryan went to the station. Brian gave a ring to
+       Brian with pr 0.0047 relative pr 0.5312
+    Afterwards, Jacob and Kenneth went to the house. Jacob gave a snack to
+       Jacob with pr 0.0233 relative pr 0.7310
+-------- IOI BABA_LONG --------
+totals:
+  total for top_1:
+    +: 298 / 300 = 0.9933333333333333
+    -: 2 / 300 = 0.006666666666666667
+    o: 0 / 300 = 0.0
+
+failures:
+  failures for top_1
+    After the lunch in the afternoon, Brian and Bryan went to the station. Brian gave a ring to
+       Brian with pr 0.0067 relative pr 0.6060
+    Then in the morning, Timothy and Matthew went to the store. Timothy gave a necklace to
+       Timothy with pr 0.0008 relative pr 0.5698
+-------- IOI BABA_LATE --------
+totals:
+  total for top_1:
+    +: 300 / 300 = 1.0
+    -: 0 / 300 = 0.0
+    o: 0 / 300 = 0.0
+
+failures:
+-------- IOI BABA_EARLY --------
+totals:
+  total for top_1:
+    +: 295 / 300 = 0.9833333333333333
+    -: 5 / 300 = 0.016666666666666666
+    o: 0 / 300 = 0.0
+
+failures:
+  failures for top_1
+    Then Samuel and Heather had a long argument, and after that Samuel said to
+       Samuel with pr 0.0424 relative pr 0.8428
+    Then Adam and Charles went to the garden, and Adam gave a kiss to
+       Adam with pr 0.0047 relative pr 0.6279
+    Then Timothy and Matthew went to the store, and Timothy gave a necklace to
+       Timothy with pr 0.0010 relative pr 0.6079
+    Then Matthew and Christopher went to the hospital, and Matthew gave a kiss to
+       Matthew with pr 0.0162 relative pr 0.5698
+    Then Elizabeth and Erica went to the garden, and Elizabeth gave a drink to
+       Elizabeth with pr 0.0289 relative pr 0.7476
+
+
+-------- Docstring --------
+totals:
+  total for top_1:
+    +: 286 / 300 = 0.9533333333333334
+    -: 14 / 300 = 0.04666666666666667
+    o: 0 / 300 = 0.0
+
+failures:
+  failures for top_1
+    
+def error(self, image, client, user, name, port, index):
+    """dog request wheel
+
+    :param user: travel creation
+    :param name: notice bell
+    :param
+       client with pr 0.3792 relative pr 0.4185
+    
+def form(self, image, error, resource, match, server, order):
+    """employment type past
+
+    :param resource: length aim
+    :param match: margin performance
+    :param
+       image with pr 0.4392 relative pr 0.4792
+    
+def order(self, command, array, title, content, request, test):
+    """bank method sector
+
+    :param title: library grass
+    :param content: scope church
+    :param
+       command with pr 0.3772 relative pr 0.4087
+    
+def user(self, project, description, result, parent, new, check):
+    """set lane committee
+
+    :param result: drop mode
+    :param parent: gap attack
+    :param
+       description with pr 0.4939 relative pr 0.5078
+    
+def table(self, old, call, resource, tag, config, load):
+    """prison bit protection
+
+    :param resource: rule article
+    :param tag: target warning
+    :param
+       call with pr 0.4150 relative pr 0.4392
+    
+def response(self, color, array, string, instance, create, results):
+    """reply management female
+
+    :param string: export net
+    :param instance: camp style
+    :param
+       string with pr 0.3635 relative pr 0.5596
+    
+def old(self, context, settings, state, order, content, tag):
+    """final input copy
+
+    :param state: club operation
+    :param order: bank reader
+    :param
+       context with pr 0.6572 relative pr 0.6724
+    
+def field(self, shape, num, current, string, response, function):
+    """link daughter air
+
+    :param current: cancer export
+    :param string: nature music
+    :param
+       string with pr 0.3738 relative pr 0.5923
+    
+def node(self, table, old, json, string, default, valid):
+    """bar green employment
+
+    :param json: finger god
+    :param string: memory individual
+    :param
+       string with pr 0.5161 relative pr 0.8711
+    
+def new(self, num, function, message, name, call, server):
+    """force gate race
+
+    :param message: gate border
+    :param name: drug look
+    :param
+       function with pr 0.6045 relative pr 0.6318
+    
+def line(self, old, parent, last, obj, filename, option):
+    """wall dad help
+
+    :param last: gap message
+    :param obj: priority tree
+    :param
+       parent with pr 0.4470 relative pr 0.4937
+    
+def code(self, tag, label, header, string, info, msg):
+    """guide return reference
+
+    :param header: hall grade
+    :param string: weight sum
+    :param
+       string with pr 0.4597 relative pr 0.6904
+    
+def read(self, form, first, label, root, result, names):
+    """plant win import
+
+    :param label: hall network
+    :param root: run action
+    :param
+       form with pr 0.4282 relative pr 0.4531
+    
+def filename(self, load, shape, update, sub, response, parser):
+    """scene horse examination
+
+    :param update: south staff
+    :param sub: sand saving
+    :param
+       load with pr 0.3853 relative pr 0.4626

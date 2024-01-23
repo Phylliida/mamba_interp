@@ -1,0 +1,795 @@
+-------- Greater Than --------
+totals:
+  total for top_1:
+    +: 283 / 300 = 0.9433333333333334
+    -: 11 / 300 = 0.03666666666666667
+    o: 6 / 300 = 0.02
+  total for top_2:
+    +: 274 / 300 = 0.9133333333333333
+    -: 15 / 300 = 0.05
+    o: 11 / 300 = 0.03666666666666667
+  total for top_3:
+    +: 274 / 300 = 0.9133333333333333
+    -: 20 / 300 = 0.06666666666666667
+    o: 6 / 300 = 0.02
+  total for top_4:
+    +: 272 / 300 = 0.9066666666666666
+    -: 25 / 300 = 0.08333333333333333
+    o: 3 / 300 = 0.01
+  total for top_5:
+    +: 274 / 300 = 0.9133333333333333
+    -: 23 / 300 = 0.07666666666666666
+    o: 3 / 300 = 0.01
+
+failures:
+  failures for top_1
+    The investigation lasted from the year 1332 to 13
+      32 with pr 0.2866 relative pr 0.2969
+    The rivalry lasted from the year 1291 to 12
+      91 with pr 0.0808 relative pr 0.0847
+    The impact lasted from the year 1243 to 12
+      43 with pr 0.0620 relative pr 0.0637
+    The trip lasted from the year 1248 to 12
+      48 with pr 0.0541 relative pr 0.0564
+    The investigation lasted from the year 1272 to 12
+      72 with pr 0.0711 relative pr 0.0726
+    The negotiation lasted from the year 1297 to 12
+      97 with pr 0.1193 relative pr 0.1317
+    The fame lasted from the year 1243 to 12
+      43 with pr 0.0422 relative pr 0.0436
+    The progress lasted from the year 1297 to 12
+      97 with pr 0.1035 relative pr 0.1127
+    The competition lasted from the year 1425 to 14
+      25 with pr 0.0418 relative pr 0.0421
+    The relationship lasted from the year 1286 to 12
+      86 with pr 0.0740 relative pr 0.0765
+    The rivalry lasted from the year 1728 to 17
+      28 with pr 0.0385 relative pr 0.0388
+  other    for top_1
+    The voyage lasted from the year 1696 to 16
+      99 with pr 0.2788 relative pr nan
+    The work lasted from the year 1797 to 17
+      99 with pr 0.3711 relative pr nan
+    The plague lasted from the year 1697 to 16
+      99 with pr 0.3708 relative pr nan
+    The cooperation lasted from the year 1696 to 16
+      99 with pr 0.1217 relative pr nan
+    The contract lasted from the year 1497 to 14
+      99 with pr 0.1471 relative pr nan
+    The growth lasted from the year 1795 to 17
+      99 with pr 0.2106 relative pr nan
+  failures for top_2
+    The employment lasted from the year 1660 to 16
+      60 with pr 0.0639 relative pr 0.0649
+    The illness lasted from the year 1218 to 12
+      18 with pr 0.0410 relative pr 0.0417
+    The outbreak lasted from the year 1320 to 13
+      20 with pr 0.2001 relative pr 0.2053
+    The rivalry lasted from the year 1661 to 16
+      61 with pr 0.0355 relative pr 0.0359
+    The challenge lasted from the year 1273 to 12
+      73 with pr 0.0591 relative pr 0.0602
+    The employment lasted from the year 1583 to 15
+      83 with pr 0.0616 relative pr 0.0640
+    The construction lasted from the year 1282 to 12
+      82 with pr 0.0844 relative pr 0.0861
+    The assessment lasted from the year 1230 to 12
+      30 with pr 0.0468 relative pr 0.0485
+    The engagement lasted from the year 1249 to 12
+      49 with pr 0.0523 relative pr 0.0555
+    The decline lasted from the year 1464 to 14
+      64 with pr 0.0345 relative pr 0.0351
+    The competition lasted from the year 1317 to 13
+      17 with pr 0.1616 relative pr 0.1678
+    The tests lasted from the year 1364 to 13
+      64 with pr 0.3159 relative pr 0.4182
+    The evaluation lasted from the year 1420 to 14
+      20 with pr 0.0536 relative pr 0.0540
+    The therapy lasted from the year 1780 to 17
+      80 with pr 0.0770 relative pr 0.0813
+    The rule lasted from the year 1266 to 12
+      66 with pr 0.0557 relative pr 0.0569
+  other    for top_2
+    The trial lasted from the year 1494 to 14
+      99 with pr 0.1351 relative pr nan
+    The deal lasted from the year 1696 to 16
+      99 with pr 0.1067 relative pr nan
+    The retaliation lasted from the year 1595 to 15
+      99 with pr 0.1418 relative pr nan
+    The test lasted from the year 1596 to 15
+      99 with pr 0.1627 relative pr nan
+    The contact lasted from the year 1597 to 15
+      99 with pr 0.1072 relative pr nan
+    The patrols lasted from the year 1705 to 17
+      07 with pr 0.0547 relative pr nan
+    The unemployment lasted from the year 1697 to 16
+      99 with pr 0.0542 relative pr nan
+    The shift lasted from the year 1697 to 16
+      99 with pr 0.0848 relative pr nan
+    The abduction lasted from the year 1795 to 17
+      99 with pr 0.2076 relative pr nan
+    The test lasted from the year 1794 to 17
+      99 with pr 0.1605 relative pr nan
+    The consultation lasted from the year 1706 to 17
+      07 with pr 0.0555 relative pr nan
+  failures for top_3
+    The work lasted from the year 1797 to 17
+      97 with pr 0.0828 relative pr 0.1354
+    The abduction lasted from the year 1640 to 16
+      40 with pr 0.0406 relative pr 0.0424
+    The stint lasted from the year 1450 to 14
+      50 with pr 0.0561 relative pr 0.0568
+    The plague lasted from the year 1697 to 16
+      97 with pr 0.0828 relative pr 0.1321
+    The work lasted from the year 1260 to 12
+      60 with pr 0.0467 relative pr 0.0471
+    The incarceration lasted from the year 1466 to 14
+      66 with pr 0.0412 relative pr 0.0422
+    The deal lasted from the year 1234 to 12
+      34 with pr 0.0499 relative pr 0.0507
+    The engagement lasted from the year 1325 to 13
+      25 with pr 0.1946 relative pr 0.1976
+    The contact lasted from the year 1597 to 15
+      97 with pr 0.0889 relative pr 0.0999
+    The domination lasted from the year 1630 to 16
+      30 with pr 0.0368 relative pr 0.0377
+    The unemployment lasted from the year 1697 to 16
+      97 with pr 0.0464 relative pr 0.0497
+    The contract lasted from the year 1497 to 14
+      97 with pr 0.1077 relative pr 0.1277
+    The shift lasted from the year 1697 to 16
+      97 with pr 0.0660 relative pr 0.0729
+    The rule lasted from the year 1729 to 17
+      29 with pr 0.0247 relative pr 0.0249
+    The hardship lasted from the year 1420 to 14
+      20 with pr 0.0331 relative pr 0.0333
+    The tradition lasted from the year 1572 to 15
+      72 with pr 0.0514 relative pr 0.0525
+    The journey lasted from the year 1764 to 17
+      64 with pr 0.0432 relative pr 0.0436
+    The practice lasted from the year 1483 to 14
+      83 with pr 0.0616 relative pr 0.0639
+    The growth lasted from the year 1795 to 17
+      95 with pr 0.0906 relative pr 0.1166
+    The challenge lasted from the year 1268 to 12
+      68 with pr 0.0518 relative pr 0.0526
+  other    for top_3
+    The invasion lasted from the year 1790 to 17
+      99 with pr 0.1108 relative pr nan
+    The negotiation lasted from the year 1297 to 12
+      99 with pr 0.0770 relative pr nan
+    The tests lasted from the year 1364 to 13
+      99 with pr 0.1317 relative pr nan
+    The insurgency lasted from the year 1786 to 17
+      99 with pr 0.0874 relative pr nan
+    The conspiracy lasted from the year 1703 to 17
+      07 with pr 0.0355 relative pr nan
+    The progress lasted from the year 1297 to 12
+      99 with pr 0.0628 relative pr nan
+  failures for top_4
+    The voyage lasted from the year 1696 to 16
+      96 with pr 0.0799 relative pr 0.1115
+    The work lasted from the year 1797 to 17
+      96 with pr 0.0391 relative pr 0.0640
+    The unemployment lasted from the year 1453 to 14
+      53 with pr 0.0347 relative pr 0.0351
+    The hostility lasted from the year 1266 to 12
+      66 with pr 0.0391 relative pr 0.0397
+    The testing lasted from the year 1315 to 13
+      15 with pr 0.1210 relative pr 0.1232
+    The plague lasted from the year 1697 to 16
+      96 with pr 0.0367 relative pr 0.0586
+    The campaign lasted from the year 1430 to 14
+      30 with pr 0.0285 relative pr 0.0286
+    The testing lasted from the year 1530 to 15
+      30 with pr 0.0361 relative pr 0.0362
+    The deal lasted from the year 1696 to 16
+      96 with pr 0.0571 relative pr 0.0654
+    The retaliation lasted from the year 1595 to 15
+      95 with pr 0.0975 relative pr 0.1138
+    The test lasted from the year 1596 to 15
+      96 with pr 0.0956 relative pr 0.1146
+    The evaluation lasted from the year 1293 to 12
+      93 with pr 0.1070 relative pr 0.1169
+    The quest lasted from the year 1241 to 12
+      41 with pr 0.0301 relative pr 0.0306
+    The contact lasted from the year 1597 to 15
+      96 with pr 0.0507 relative pr 0.0569
+    The cooperation lasted from the year 1696 to 16
+      96 with pr 0.0575 relative pr 0.0665
+    The quest lasted from the year 1340 to 13
+      40 with pr 0.0739 relative pr 0.0798
+    The unemployment lasted from the year 1697 to 16
+      90 with pr 0.0300 relative pr 0.0321
+    The contract lasted from the year 1497 to 14
+      96 with pr 0.0508 relative pr 0.0603
+    The existence lasted from the year 1420 to 14
+      20 with pr 0.0269 relative pr 0.0272
+    The shift lasted from the year 1697 to 16
+      94 with pr 0.0312 relative pr 0.0344
+    The negotiation lasted from the year 1297 to 12
+      96 with pr 0.0497 relative pr 0.0549
+    The tests lasted from the year 1364 to 13
+      60 with pr 0.0485 relative pr 0.0641
+    The appraisal lasted from the year 1720 to 17
+      20 with pr 0.0351 relative pr 0.0358
+    The progress lasted from the year 1297 to 12
+      96 with pr 0.0449 relative pr 0.0488
+    The decrease lasted from the year 1750 to 17
+      50 with pr 0.0434 relative pr 0.0440
+  other    for top_4
+    The quest lasted from the year 1489 to 14
+      99 with pr 0.0631 relative pr nan
+    The outbreak lasted from the year 1690 to 16
+      99 with pr 0.0973 relative pr nan
+    The negotiation lasted from the year 1592 to 15
+      99 with pr 0.0855 relative pr nan
+  failures for top_5
+    The voyage lasted from the year 1696 to 16
+      95 with pr 0.0428 relative pr 0.0597
+    The work lasted from the year 1797 to 17
+      94 with pr 0.0305 relative pr 0.0498
+    The assaults lasted from the year 1482 to 14
+      82 with pr 0.0631 relative pr 0.0649
+    The plague lasted from the year 1697 to 16
+      94 with pr 0.0286 relative pr 0.0456
+    The process lasted from the year 1315 to 13
+      15 with pr 0.0955 relative pr 0.0972
+    The deal lasted from the year 1696 to 16
+      95 with pr 0.0431 relative pr 0.0493
+    The decrease lasted from the year 1686 to 16
+      86 with pr 0.0643 relative pr 0.0670
+    The test lasted from the year 1596 to 15
+      95 with pr 0.0618 relative pr 0.0740
+    The contact lasted from the year 1597 to 15
+      94 with pr 0.0420 relative pr 0.0471
+    The incarceration lasted from the year 1728 to 17
+      28 with pr 0.0208 relative pr 0.0210
+    The cooperation lasted from the year 1696 to 16
+      95 with pr 0.0477 relative pr 0.0551
+    The stature lasted from the year 1730 to 17
+      30 with pr 0.0276 relative pr 0.0282
+    The sanctions lasted from the year 1221 to 12
+      21 with pr 0.0440 relative pr 0.0446
+    The unemployment lasted from the year 1697 to 16
+      94 with pr 0.0281 relative pr 0.0301
+    The contract lasted from the year 1497 to 14
+      95 with pr 0.0435 relative pr 0.0516
+    The shift lasted from the year 1697 to 16
+      96 with pr 0.0312 relative pr 0.0344
+    The abduction lasted from the year 1795 to 17
+      95 with pr 0.0813 relative pr 0.1050
+    The negotiation lasted from the year 1297 to 12
+      94 with pr 0.0399 relative pr 0.0441
+    The patrols lasted from the year 1229 to 12
+      29 with pr 0.0468 relative pr 0.0479
+    The negotiation lasted from the year 1592 to 15
+      92 with pr 0.0855 relative pr 0.0936
+    The strikes lasted from the year 1247 to 12
+      47 with pr 0.0316 relative pr 0.0326
+    The competition lasted from the year 1574 to 15
+      74 with pr 0.0527 relative pr 0.0535
+    The progress lasted from the year 1297 to 12
+      94 with pr 0.0336 relative pr 0.0366
+  other    for top_5
+    The disorder lasted from the year 1706 to 17
+      07 with pr 0.0284 relative pr nan
+    The tradition lasted from the year 1593 to 15
+      99 with pr 0.0801 relative pr nan
+    The tests lasted from the year 1364 to 13
+      70 with pr 0.0123 relative pr nan
+
+
+-------- IOI --------
+-------- IOI ABC --------
+totals:
+  total for top_1:
+    +: 297 / 300 = 0.99
+    -: 3 / 300 = 0.01
+    o: 0 / 300 = 0.0
+
+failures:
+  failures for top_1
+    Friends Crystal, Tyler and Lauren went to the office. Tyler and Lauren gave a basketball to
+       Tyler with pr 0.0572 relative pr 0.4299
+    Friends Jose, Lindsey and Paul went to the store. Lindsey and Paul gave a drink to
+       Paul with pr 0.0300 relative pr 0.5073
+    Friends Courtney, Rachel and Christina went to the house. Rachel and Christina gave a drink to
+       Rachel with pr 0.0414 relative pr 0.3752
+-------- IOI BAC --------
+totals:
+  total for top_1:
+    +: 294 / 300 = 0.98
+    -: 6 / 300 = 0.02
+    o: 0 / 300 = 0.0
+
+failures:
+  failures for top_1
+    Afterwards Gregory, Jeffrey and Thomas went to the store. Gregory and Thomas gave a snack to
+       Gregory with pr 0.0438 relative pr 0.4790
+    Afterwards Rachel, Sara and Jacob went to the school. Rachel and Jacob gave a drink to
+       Rachel with pr 0.0545 relative pr 0.4480
+    Friends Rachel, Laura and Jennifer went to the restaurant. Rachel and Jennifer gave a kiss to
+       Rachel with pr 0.0277 relative pr 0.5000
+    Afterwards Bradley, Tiffany and Sean went to the hospital. Bradley and Sean gave a drink to
+       Bradley with pr 0.0753 relative pr 0.4995
+    Friends Jeremy, Eric and Justin went to the hospital. Jeremy and Justin gave a kiss to
+       Jeremy with pr 0.0549 relative pr 0.4302
+    Afterwards Daniel, Travis and Paul went to the school. Daniel and Paul gave a ring to
+       Daniel with pr 0.0564 relative pr 0.5317
+-------- IOI BABA --------
+totals:
+  total for top_1:
+    +: 300 / 300 = 1.0
+    -: 0 / 300 = 0.0
+    o: 0 / 300 = 0.0
+
+failures:
+-------- IOI BABA_LONG --------
+totals:
+  total for top_1:
+    +: 300 / 300 = 1.0
+    -: 0 / 300 = 0.0
+    o: 0 / 300 = 0.0
+
+failures:
+-------- IOI BABA_LATE --------
+totals:
+  total for top_1:
+    +: 300 / 300 = 1.0
+    -: 0 / 300 = 0.0
+    o: 0 / 300 = 0.0
+
+failures:
+-------- IOI BABA_EARLY --------
+totals:
+  total for top_1:
+    +: 300 / 300 = 1.0
+    -: 0 / 300 = 0.0
+    o: 0 / 300 = 0.0
+
+failures:
+
+
+-------- Docstring --------
+totals:
+  total for top_1:
+    +: 246 / 300 = 0.82
+    -: 51 / 300 = 0.17
+    o: 3 / 300 = 0.01
+
+failures:
+  failures for top_1
+    
+def index(self, number, run, current, task, ret, found):
+    """century border bone
+
+    :param current: flow selection
+    :param task: round actor
+    :param
+       run with pr 0.4375 relative pr 0.4922
+    
+def image(self, date, url, response, sub, found, key):
+    """framework client turn
+
+    :param response: bank search
+    :param sub: heart human
+    :param
+       url with pr 0.5327 relative pr 0.5703
+    
+def client(self, test, output, label, target, file, num):
+    """joy ability writer
+
+    :param label: story being
+    :param target: danger host
+    :param
+       test with pr 0.3862 relative pr 0.4167
+    
+def client(self, line, status, code, context, results, option):
+    """radio local regulation
+
+    :param code: instance wall
+    :param context: yard minute
+    :param
+       status with pr 0.4382 relative pr 0.6978
+    
+def obj(self, message, date, settings, log, current, count):
+    """sequence yard bread
+
+    :param settings: quarter cycle
+    :param log: training final
+    :param
+       date with pr 0.5835 relative pr 0.6138
+    
+def parent(self, query, num, update, test, settings, status):
+    """application release sand
+
+    :param update: message lip
+    :param test: program drive
+    :param
+       num with pr 0.5615 relative pr 0.6011
+    
+def order(self, command, array, title, content, request, test):
+    """bank method sector
+
+    :param title: library grass
+    :param content: scope church
+    :param
+       array with pr 0.5215 relative pr 0.5869
+    
+def message(self, json, task, first, name, node, item):
+    """strength belt sense
+
+    :param first: shell club
+    :param name: charge match
+    :param
+       task with pr 0.5488 relative pr 0.5645
+    
+def client(self, function, text, field, project, code, task):
+    """album application general
+
+    :param field: belt direction
+    :param project: sector touch
+    :param
+       function with pr 0.4133 relative pr 0.4385
+    
+def old(self, path, query, target, token, index, color):
+    """field comment grade
+
+    :param target: agency chip
+    :param token: sun lot
+    :param
+       query with pr 0.4104 relative pr 0.4490
+    
+def config(self, project, start, message, token, option, session):
+    """local size air
+
+    :param message: cut heat
+    :param token: glass class
+    :param
+       start with pr 0.6270 relative pr 0.7559
+    
+def key(self, port, options, filename, path, mode, string):
+    """leaf thinking standard
+
+    :param filename: parent stuff
+    :param path: individual birth
+    :param
+       options with pr 0.4875 relative pr 0.5669
+    
+def table(self, old, call, resource, tag, config, load):
+    """prison bit protection
+
+    :param resource: rule article
+    :param tag: target warning
+    :param
+       call with pr 0.5405 relative pr 0.5586
+    
+def ret(self, table, title, file, version, text, project):
+    """clock control protection
+
+    :param file: expression threat
+    :param version: seat move
+    :param
+       table with pr 0.5615 relative pr 0.5854
+    
+def options(self, log, event, count, values, field, default):
+    """game module relation
+
+    :param count: generation league
+    :param values: cake leg
+    :param
+       event with pr 0.6138 relative pr 0.6479
+    
+def start(self, end, read, valid, info, old, parent):
+    """existence protein rose
+
+    :param valid: sign intelligence
+    :param info: sand zone
+    :param
+       end with pr 0.4346 relative pr 0.5063
+    
+def query(self, function, action, new, session, file, found):
+    """agent worker agency
+
+    :param new: distance ship
+    :param session: finger factor
+    :param
+       function with pr 0.6792 relative pr 0.7144
+    
+def field(self, new, mode, file, filename, valid, message):
+    """row mind account
+
+    :param file: unity gallery
+    :param filename: square share
+    :param
+       mode with pr 0.4536 relative pr 0.5488
+    
+def response(self, color, array, string, instance, create, results):
+    """reply management female
+
+    :param string: export net
+    :param instance: camp style
+    :param
+       array with pr 0.7686 relative pr 0.9263
+    
+def current(self, expected, item, event, model, content, context):
+    """file left building
+
+    :param event: bench crime
+    :param model: gas user
+    :param
+       item with pr 0.4236 relative pr 0.4976
+    
+def instance(self, key, target, order, content, call, ret):
+    """pair language test
+
+    :param order: male light
+    :param content: thought reading
+    :param
+       target with pr 0.5342 relative pr 0.5542
+    
+def data(self, project, check, client, status, parser, end):
+    """secret rest host
+
+    :param client: concept item
+    :param status: self start
+    :param
+       project with pr 0.7407 relative pr 0.8809
+    
+def base(self, event, target, description, option, old, port):
+    """index property device
+
+    :param description: confidence history
+    :param option: weather offer
+    :param
+       target with pr 0.4639 relative pr 0.5098
+    
+def load(self, port, mode, version, target, request, create):
+    """path message theme
+
+    :param version: mark foot
+    :param target: population charge
+    :param
+       mode with pr 0.6860 relative pr 0.7114
+    
+def required(self, table, fields, model, mode, filename, obj):
+    """thought story space
+
+    :param model: music age
+    :param mode: gallery sense
+    :param
+       fields with pr 0.3506 relative pr 0.4868
+    
+def content(self, form, names, values, files, number, model):
+    """knowledge function count
+
+    :param values: event history
+    :param files: distance rest
+    :param
+       names with pr 0.5898 relative pr 0.7734
+    
+def files(self, number, last, filename, num, load, session):
+    """ground location balance
+
+    :param filename: final detail
+    :param num: map price
+    :param
+       last with pr 0.6050 relative pr 0.6479
+    
+def node(self, table, old, json, string, default, valid):
+    """bar green employment
+
+    :param json: finger god
+    :param string: memory individual
+    :param
+       string with pr 0.9302 relative pr 0.9971
+    
+def table(self, ret, msg, message, test, settings, call):
+    """finger method post
+
+    :param message: row paper
+    :param test: bench computer
+    :param
+       msg with pr 0.3955 relative pr 0.4875
+    
+def first(self, name, parent, description, data, status, test):
+    """actor plant duty
+
+    :param description: strength hill
+    :param data: sort bottom
+    :param
+       name with pr 0.4763 relative pr 0.5991
+    
+def filename(self, content, tag, event, text, source, mode):
+    """rank box help
+
+    :param event: bone finding
+    :param text: poll crime
+    :param
+       tag with pr 0.4858 relative pr 0.5718
+    
+def new(self, num, function, message, name, call, server):
+    """force gate race
+
+    :param message: gate border
+    :param name: drug look
+    :param
+       function with pr 0.8452 relative pr 0.8735
+    
+def request(self, host, file, image, format, error, current):
+    """dad grade date
+
+    :param image: factor security
+    :param format: chapter poll
+    :param
+       file with pr 0.8359 relative pr 0.8623
+    
+def label(self, version, row, output, session, results, key):
+    """gate field index
+
+    :param output: mill volume
+    :param session: thought element
+    :param
+       row with pr 0.2532 relative pr 0.4285
+    
+def code(self, module, string, token, sub, expected, start):
+    """item heart tube
+
+    :param token: leg shirt
+    :param sub: vote position
+    :param
+       module with pr 0.5664 relative pr 0.5967
+    
+def text(self, code, module, event, version, end, values):
+    """paragraph bag camera
+
+    :param event: billion engineering
+    :param version: claim final
+    :param
+       module with pr 0.6035 relative pr 0.6504
+    
+def size(self, old, config, result, ret, description, start):
+    """key flower pipe
+
+    :param result: reference culture
+    :param ret: import lad
+    :param
+       config with pr 0.4866 relative pr 0.5063
+    
+def user(self, value, row, match, status, url, context):
+    """hat cause son
+
+    :param match: purpose lead
+    :param status: generation argument
+    :param
+       row with pr 0.4307 relative pr 0.4526
+    
+def session(self, color, string, project, response, name, option):
+    """patient saving finger
+
+    :param project: score talk
+    :param response: client camp
+    :param
+       string with pr 0.5303 relative pr 0.5898
+    
+def first(self, source, load, query, parser, instance, session):
+    """input sight model
+
+    :param query: mission generation
+    :param parser: stress value
+    :param
+       load with pr 0.4314 relative pr 0.4749
+    
+def status(self, function, filename, port, number, format, options):
+    """file example root
+
+    :param port: minute treatment
+    :param number: surface example
+    :param
+       function with pr 0.6670 relative pr 0.7368
+    
+def color(self, tag, array, ret, date, found, content):
+    """type pub host
+
+    :param ret: tax delay
+    :param date: entry engine
+    :param
+       tag with pr 0.6060 relative pr 0.7168
+    
+def status(self, form, option, item, data, output, last):
+    """division video frequency
+
+    :param item: grade building
+    :param data: letter male
+    :param
+       option with pr 0.8613 relative pr 0.9492
+    
+def url(self, date, values, order, msg, new, load):
+    """object analysis fashion
+
+    :param order: determination profile
+    :param msg: spirit being
+    :param
+       date with pr 0.4973 relative pr 0.5786
+    
+def message(self, content, version, order, options, valid, name):
+    """cat finding birth
+
+    :param order: wife key
+    :param options: average contract
+    :param
+       version with pr 0.5981 relative pr 0.7231
+    
+def instance(self, image, array, function, query, action, msg):
+    """grade mode actor
+
+    :param function: official draft
+    :param query: frequency sea
+    :param
+       array with pr 0.4561 relative pr 0.4729
+    
+def valid(self, required, image, parser, check, source, shape):
+    """son pace call
+
+    :param parser: black general
+    :param check: wife message
+    :param
+       image with pr 0.4429 relative pr 0.5298
+    
+def code(self, tag, label, header, string, info, msg):
+    """guide return reference
+
+    :param header: hall grade
+    :param string: weight sum
+    :param
+       string with pr 0.4370 relative pr 0.6143
+    
+def new(self, old, log, json, title, ret, page):
+    """comfort bit song
+
+    :param json: while ground
+    :param title: cost range
+    :param
+       log with pr 0.4468 relative pr 0.5146
+    
+def response(self, info, base, message, values, val, date):
+    """oil age video
+
+    :param message: will walk
+    :param values: link street
+    :param
+       date with pr 0.3716 relative pr 0.4163
+    
+def match(self, description, last, content, first, item, message):
+    """park public secret
+
+    :param content: mission bird
+    :param first: aim phase
+    :param
+       last with pr 0.6177 relative pr 0.7065
+  other    for top_1
+    
+def message(self, names, string, model, version, option, end):
+    """heat drop control
+
+    :param model: building hat
+    :param version: writing gallery
+    :param
+       name with pr 0.4265 relative pr nan
+    
+def field(self, shape, num, current, string, response, function):
+    """link daughter air
+
+    :param current: cancer export
+    :param string: nature music
+    :param
+       int with pr 0.2363 relative pr nan
+    
+def run(self, path, check, action, test, expected, string):
+    """tin access material
+
+    :param action: blood iron
+    :param test: century access
+    :param
+       expect with pr 0.3838 relative pr nan
