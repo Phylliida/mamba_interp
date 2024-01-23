@@ -558,14 +558,14 @@ class HookedMambaLayerBatchSplit(nn.Module):
         self.A_log     = nn.Parameter(torch.log(torch.randn([E,N])))
         
         
-        self.hook_x_l = InputDependentHookPoint(input_dependent_postfixes_batch_split)   # (b, l, [E]
-        self.hook_delta = InputDependentHookPoint(input_dependent_postfixes_batch_split) # (b, l, [E])
-        self.hook_A_bar = InputDependentHookPoint(input_dependent_postfixes_batch_split) # (b, l, [E,N])
-        self.hook_B = InputDependentHookPoint(input_dependent_postfixes_batch_split)     # (b, l, [N])
-        self.hook_B_bar = InputDependentHookPoint(input_dependent_postfixes_batch_split) # (b, l, [E,N])
-        self.hook_h = InputDependentHookPoint(input_dependent_postfixes_batch_split)     # (b, l, [E,N])
-        self.hook_C = InputDependentHookPoint(input_dependent_postfixes_batch_split)     # (b, l, [N])
-        self.hook_y_l = InputDependentHookPoint(input_dependent_postfixes_batch_split)   # (b, l, [E])
+        self.hook_x_l = InputDependentHookPoint(input_dependent_postfixes_batch_split)   # [E], with b and l param
+        self.hook_delta = InputDependentHookPoint(input_dependent_postfixes_batch_split) # [E], with b and l param
+        self.hook_A_bar = InputDependentHookPoint(input_dependent_postfixes_batch_split) # [E,N], with b and l param
+        self.hook_B = InputDependentHookPoint(input_dependent_postfixes_batch_split)     # [N], with b and l param
+        self.hook_B_bar = InputDependentHookPoint(input_dependent_postfixes_batch_split) # [E,N], with b and l param
+        self.hook_h = InputDependentHookPoint(input_dependent_postfixes_batch_split)     # [E,N], with b and l param
+        self.hook_C = InputDependentHookPoint(input_dependent_postfixes_batch_split)     # [N], with b and l param
+        self.hook_y_l = InputDependentHookPoint(input_dependent_postfixes_batch_split)   # [E], with b and l param
         
         self.hook_ssm_output = HookPoint() # [B,L,E]
 
@@ -833,14 +833,14 @@ class HookedMambaLayer(nn.Module):
         
         self.A_log     = nn.Parameter(torch.log(torch.randn([E,N])))
         
-        self.hook_x_l = InputDependentHookPoint(input_dependent_postfixes)   # (b, l, [E]
-        self.hook_delta = InputDependentHookPoint(input_dependent_postfixes) # (b, l, [E])
-        self.hook_A_bar = InputDependentHookPoint(input_dependent_postfixes) # (b, l, [E,N])
-        self.hook_B = InputDependentHookPoint(input_dependent_postfixes)     # (b, l, [N])
-        self.hook_B_bar = InputDependentHookPoint(input_dependent_postfixes) # (b, l, [E,N])
-        self.hook_h = InputDependentHookPoint(input_dependent_postfixes)     # (b, l, [E,N])
-        self.hook_C = InputDependentHookPoint(input_dependent_postfixes)     # (b, l, [N])
-        self.hook_y_l = InputDependentHookPoint(input_dependent_postfixes)   # (b, l, [E])
+        self.hook_x_l = InputDependentHookPoint(input_dependent_postfixes)   # [B,E], with l param
+        self.hook_delta = InputDependentHookPoint(input_dependent_postfixes) # [B,E], with l param
+        self.hook_A_bar = InputDependentHookPoint(input_dependent_postfixes) # [B,E,N], with l param
+        self.hook_B = InputDependentHookPoint(input_dependent_postfixes)     # [B,N], with l param
+        self.hook_B_bar = InputDependentHookPoint(input_dependent_postfixes) # [B,E,N], with l param
+        self.hook_h = InputDependentHookPoint(input_dependent_postfixes)     # [B,E,N], with l param
+        self.hook_C = InputDependentHookPoint(input_dependent_postfixes)     # [B,N], with l param
+        self.hook_y_l = InputDependentHookPoint(input_dependent_postfixes)   # [B,E], with l param
         
         self.hook_ssm_output = HookPoint() # [B,L,E]
 
@@ -922,7 +922,7 @@ class HookedMambaLayer(nn.Module):
                 else: # not setup, maybe called forward by itself?
                     return value
             
-            x[:,l] = apply_hook(self.hook_x_l, x[:,l])
+            x[:,l] = apply_hook(self.hook_x_l, x[:,l]) # [B,E]
             #### First, discretization: A and B -> A_bar and B_bar ####
             ## Compute Delta ##
             # [B,E]                  [D_delta->E] [E->D_delta] [B,E]
