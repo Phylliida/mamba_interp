@@ -331,7 +331,6 @@ class InputDependentHookedRootModule(HookedRootModule):
             if name in self.hook_dict:
                 del self.hook_dict[name]
             hook.name = name
-            print("input dependent hook with name", name)
         
         self.did_setup_input_dependent_hooks = False
     
@@ -559,6 +558,8 @@ class HookedMambaLayerBatchSplit(nn.Module):
         
         
         self.hook_x_l = InputDependentHookPoint(input_dependent_postfixes_batch_split)   # [E], with b and l param
+        self.hook_delta_1 = InputDependentHookPoint(input_dependent_postfixes_batch_split) # [E], with b and l param
+        self.hook_delta_2 = InputDependentHookPoint(input_dependent_postfixes_batch_split) # [E], with b and l param
         self.hook_delta = InputDependentHookPoint(input_dependent_postfixes_batch_split) # [E], with b and l param
         self.hook_A_bar = InputDependentHookPoint(input_dependent_postfixes_batch_split) # [E,N], with b and l param
         self.hook_B = InputDependentHookPoint(input_dependent_postfixes_batch_split)     # [N], with b and l param
@@ -648,20 +649,28 @@ class HookedMambaLayerBatchSplit(nn.Module):
                 x[b,l] = apply_hook(self.hook_x_l, x[b,l])
                 #### First, discretization: A and B -> A_bar and B_bar ####
                 ## Compute Delta ##
-                # [E]                   [D_delta->E]   [E->D_delta]  [E]
-                delta    = F.softplus(self.W_delta_2(self.W_delta_1(x[b,l])))
-                delta = apply_hook(self.hook_delta, delta) # [E]
+                # [D_delta] [E->D_delta] [E]
+                delta1  = self.W_delta_1(x[b,l]) # no bias
+                delta1  = apply_hook(self.hook_delta_1, delta1) # [D_delta]
+                
+                # [E]     [D_delta->E] [D_delta] 
+                delta2  = self.W_delta_2(delta1) # with bias
+                delta2  = apply_hook(self.hook_delta_2, delta2) # [E]
+                
+                # [E]                [E]
+                delta  = F.softplus(delta2) 
+                delta  = apply_hook(self.hook_delta, delta) # [E]
                 
                 ## Discretize A -> A_bar ##
                 # (note [E,N]*[E,1] will first repeat the [E,1] N times so its like [E,N])
                 # [E,N]             (     [E,1]      *  [E,N] ) 
                 A_bar    = torch.exp(delta.view(E,1) * self.A)
-                A_bar = apply_hook(self.hook_A_bar, A_bar) # [E,N]
+                A_bar    = apply_hook(self.hook_A_bar, A_bar) # [E,N]
                 
                 ## Discretize B -> B_bar ##
                 # [N]        [E->N]   [E]
                 B        = self.W_B(x[b,l]) # no bias
-                B  = apply_hook(self.hook_B, B) # [N]
+                B        = apply_hook(self.hook_B, B) # [N]
                 
                 # [E,N]        [E,1]       x    [1,N]
                 B_bar    = delta.view(E,1) @ B.view(1,N)
@@ -834,6 +843,8 @@ class HookedMambaLayer(nn.Module):
         self.A_log     = nn.Parameter(torch.log(torch.randn([E,N])))
         
         self.hook_x_l = InputDependentHookPoint(input_dependent_postfixes)   # [B,E], with l param
+        self.hook_delta_1 = InputDependentHookPoint(input_dependent_postfixes) # [B,E], with l param
+        self.hook_delta_2 = InputDependentHookPoint(input_dependent_postfixes) # [B,E], with l param
         self.hook_delta = InputDependentHookPoint(input_dependent_postfixes) # [B,E], with l param
         self.hook_A_bar = InputDependentHookPoint(input_dependent_postfixes) # [B,E,N], with l param
         self.hook_B = InputDependentHookPoint(input_dependent_postfixes)     # [B,N], with l param
@@ -925,9 +936,17 @@ class HookedMambaLayer(nn.Module):
             x[:,l] = apply_hook(self.hook_x_l, x[:,l]) # [B,E]
             #### First, discretization: A and B -> A_bar and B_bar ####
             ## Compute Delta ##
-            # [B,E]                  [D_delta->E] [E->D_delta] [B,E]
-            delta    = F.softplus(self.W_delta_2(self.W_delta_1(x[:,l])))
-            delta = apply_hook(self.hook_delta, delta) # [B,E]
+            # [B,D_delta] [E->D_delta][B,E]
+            delta1  = self.W_delta_1(x[:,l]) # no bias
+            delta1  = apply_hook(self.hook_delta_1, delta1) # [B,D_delta]
+            
+            # [B,E]     [D_delta->E] [B,D_delta] 
+            delta2  = self.W_delta_2(delta1) # with bias
+            delta2  = apply_hook(self.hook_delta_2, delta2) # [B,E]
+            
+            # [B,E]             [B,E]
+            delta  = F.softplus(delta2) 
+            delta  = apply_hook(self.hook_delta, delta) # [B,E]
             
             ## Discretize A -> A_bar ##
             # (note [B,E,1]*[E,N] will first repeat the [B,E,1] N times so its like [B,E,N])
