@@ -693,7 +693,7 @@ class HookedMambaBlockBatchSplit(nn.Module):
         
         ## Project back out
         self.out_proj  = nn.Linear(E, D, bias=False)
-        self.hook_resid_pre = HookPoint() # [B,L,D]
+        self.hook_out_proj = HookPoint() # [B,L,D]
         self.hook_resid_post = HookPoint() # [B,L,D]
     
     def forward(self, resid):
@@ -834,7 +834,7 @@ class HookedMambaBlockBatchSplit(nn.Module):
         
         # [B,L,D]         [E->D]  [B,L,E]
         y         = self.out_proj(   y   ) # no bias
-        y         = self.hook_resid_pre(y) # [B,L,D]
+        y         = self.hook_out_proj(y) # [B,L,D]
     
         # [B,L,D]     [B,L,D]
         resid     +=     y
@@ -1031,7 +1031,7 @@ class HookedMambaBlock(nn.Module):
         
         ## Project back out
         self.out_proj  = nn.Linear(E, D, bias=False)
-        self.hook_resid_pre = HookPoint() # [B,L,D]
+        self.hook_out_proj = HookPoint() # [B,L,D]
         self.hook_resid_post = HookPoint() # [B,L,D]
         
     def has_hooks_in_inner_loop(self):
@@ -1248,7 +1248,7 @@ class HookedMambaBlock(nn.Module):
         
         # [B,L,D]         [E->D]  [B,L,E]
         y         = self.out_proj(   y   ) # no bias
-        y         = self.hook_resid_pre(y) # [B,L,D]
+        y         = self.hook_out_proj(y) # [B,L,D]
     
         # [B,L,D]     [B,L,D]
         resid         +=     y
