@@ -5,7 +5,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange, repeat, einsum
+from typing import Dict, List, NamedTuple, Optional, Tuple, Union, overload
+from jaxtyping import Float, Int
 
+import time
+import logging
 from dataclasses import dataclass
 import json
 import math
@@ -14,14 +18,20 @@ import itertools
 from transformers.utils import WEIGHTS_NAME, CONFIG_NAME
 from transformers.utils.hub import cached_file
 
+from transformer_lens import HookedTransformer
 from transformer_lens.hook_points import HookedRootModule, HookPoint
 from transformers import AutoTokenizer
+from transformer_lens.utils import USE_DEFAULT_VALUE
+
+SingleLoss = Float[torch.Tensor, ""]  # Type alias for a single element tensor
+LossPerToken = Float[torch.Tensor, "B L-1"]
+Loss = Union[SingleLoss, LossPerToken]
 
 
 MODEL_TOKENIZER = 'EleutherAI/gpt-neox-20b'
 
 
-def get_converted_model_from_hf(pretrained_model_name):
+def get_converted_model_from_hf(pretrained_model_name, device='cuda'):
     
     def load_config_hf(model_name):
         resolved_archive_file = cached_file(model_name, CONFIG_NAME,
@@ -34,22 +44,24 @@ def get_converted_model_from_hf(pretrained_model_name):
         return torch.load(resolved_archive_file, weights_only=True, map_location='cpu', mmap=True)
         
     config_data = load_config_hf(pretrained_model_name)
-    args = ModelArgs(
+    cfg = ModelCfg(
         d_model=config_data['d_model'],
-        n_layer=config_data['n_layer'],
-        vocab_size=config_data['vocab_size']
+        n_layers=config_data['n_layer'],
+        vocab_size=config_data['vocab_size'],
+        device=device
     )
-    D = args.d_model
-    E = args.d_inner
-    N = args.d_state
-    D_delta = args.dt_rank
-    D_conv = args.d_conv
-    V = args.vocab_size
+    D = cfg.d_model
+    E = cfg.d_inner
+    N = cfg.d_state
+    D_delta = cfg.dt_rank
+    D_conv = cfg.d_conv
+    V = cfg.vocab_size
     
     state_dict = load_state_dict_hf(pretrained_model_name)
     new_state_dict = {}
     for key, value in state_dict.items():
         key = key.replace("backbone.", "").replace("mixer.", "")
+        key = key.replace("layers.", "blocks.")
         # we split in_proj into two seperate things
         if 'in_proj' in key:
             new_state_dict[key] = value[:E]
@@ -72,12 +84,12 @@ def get_converted_model_from_hf(pretrained_model_name):
         else:
             new_state_dict[key] = value
     
-    return args, new_state_dict
+    return cfg, new_state_dict
 
 @dataclass
-class ModelArgs:
+class ModelCfg:
     d_model: int
-    n_layer: int
+    n_layers: int
     vocab_size: int
     d_state: int = 16
     expand: int = 2
@@ -86,6 +98,10 @@ class ModelArgs:
     pad_vocab_size_multiple: int = 8
     conv_bias: bool = True
     bias: bool = False
+    default_prepend_bos: bool = True
+    tokenizer_prepends_bos: bool = False
+    n_ctx: int = 2048
+    device: Union[torch.device,str] = 'cuda'
     
     def __post_init__(self):
         self.d_inner = int(self.expand * self.d_model)
@@ -96,6 +112,7 @@ class ModelArgs:
         if self.vocab_size % self.pad_vocab_size_multiple != 0:
             self.vocab_size += (self.pad_vocab_size_multiple
                                 - self.vocab_size % self.pad_vocab_size_multiple)
+
 
 
 class RMSNorm(nn.Module):
@@ -110,46 +127,48 @@ class RMSNorm(nn.Module):
         output = x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps) * self.weight
         return output
 
+# modified from https://github.com/johnma2006/mamba-minimal
 class Mamba(nn.Module):
-    def __init__(self, args):
+    def __init__(self, cfg):
         super().__init__()
-        self.args = args
-        D = args.d_model
-        E = args.d_inner
-        N = args.d_state
-        D_delta = args.dt_rank
-        D_conv = args.d_conv
-        V = args.vocab_size
+        self.cfg = cfg
+        D = cfg.d_model
+        E = cfg.d_inner
+        N = cfg.d_state
+        D_delta = cfg.dt_rank
+        D_conv = cfg.d_conv
+        V = cfg.vocab_size
         
         self.embedding = nn.Embedding(V, D)
-        self.layers = nn.ModuleList([MambaLayer(args=args) for _ in range(args.n_layer)])
+        self.blocks = nn.ModuleList([MambaBlock(cfg=cfg) for _ in range(cfg.n_layers)])
         self.norm = RMSNorm(D)
         self.lm_head  = nn.Linear(D, V, bias=False)
         
         self.tokenizer = AutoTokenizer.from_pretrained(MODEL_TOKENIZER)
+        self.tokenizer.pad_token = self.tokenizer.eos_token
     
     
 
-    def forward(self, input_ids):
-        args = self.args
-        D = args.d_model
-        E = args.d_inner
-        N = args.d_state
-        D_delta = args.dt_rank
-        D_conv = args.d_conv
-        V = args.vocab_size
+    def forward(self, input):
+        cfg = self.cfg
+        D = cfg.d_model
+        E = cfg.d_inner
+        N = cfg.d_state
+        D_delta = cfg.dt_rank
+        D_conv = cfg.d_conv
+        V = cfg.vocab_size
         
-        Batch,L = input_ids.size()
+        Batch,L = input.size()
 
-        if type(input_ids) is str:
-            input_ids = self.tokenizer(input_ids, return_tensors='pt')['input_ids'] # they passed in a prompt and not input_ids
+        if type(input) is str:
+            input = self.tokenizer(input, return_tensors='pt')['input_ids'] # they passed in a prompt and not input_ids
 
         # [B,L,D]                         [B,L]
-        resid         = self.embedding(input_ids)
+        resid         = self.embedding(input)
         
-        for layer in self.layers:
+        for block in self.blocks:
             # [B,L,D]         [B,L,D]
-            resid     = layer(resid)
+            resid     = block(resid)
          
         # [B,L,D]              [B,L,D]
         resid     = self.norm( resid )
@@ -160,24 +179,25 @@ class Mamba(nn.Module):
         return logits
     
     @staticmethod
-    def from_pretrained(pretrained_model_name):
-        args, state_dict = get_converted_model_from_hf(pretrained_model_name=pretrained_model_name)
-        model = Mamba(args)
+    def from_pretrained(pretrained_model_name, device='cuda'):
+        cfg, state_dict = get_converted_model_from_hf(pretrained_model_name=pretrained_model_name, device=device)
+        model = Mamba(cfg)
         model.load_state_dict(state_dict)
+        model = model.to(device)
         return model
 
-class MambaLayer(nn.Module):
-    def __init__(self, args):
+class MambaBlock(nn.Module):
+    def __init__(self, cfg):
         super().__init__()
-        self.args = args
+        self.cfg = cfg
         
         ## Variables
-        D = args.d_model
-        E = args.d_inner
-        N = args.d_state
-        D_delta = args.dt_rank
-        D_conv = args.d_conv
-        V = args.vocab_size
+        D = cfg.d_model
+        E = cfg.d_inner
+        N = cfg.d_state
+        D_delta = cfg.dt_rank
+        D_conv = cfg.d_conv
+        V = cfg.vocab_size
         
         ## Process inputs
         self.norm      = RMSNorm(D)
@@ -208,13 +228,13 @@ class MambaLayer(nn.Module):
     
     def forward(self, resid):
         
-        args = self.args
-        D = args.d_model
-        E = args.d_inner
-        N = args.d_state
-        D_delta = args.dt_rank
-        D_conv = args.d_conv
-        V = args.vocab_size
+        cfg = self.cfg
+        D = cfg.d_model
+        E = cfg.d_inner
+        N = cfg.d_state
+        D_delta = cfg.dt_rank
+        D_conv = cfg.d_conv
+        V = cfg.vocab_size
         
         Batch,L,D = resid.size()
         
@@ -247,7 +267,7 @@ class MambaLayer(nn.Module):
             ys_b = []
             
             # latent state, init to zeros
-            h = torch.zeros([E,N])
+            h = torch.zeros([E,N], device=self.cfg.device)
             for l in range(L):
                 #### First, discretization: A and B -> A_bar and B_bar ####
                 ## Compute Delta ##
@@ -287,7 +307,7 @@ class MambaLayer(nn.Module):
                 ys_b.append([y.float() for y in y_l.flatten()])
             ys.append(ys_b)
         # [B,L,E]
-        y = torch.tensor(ys)
+        y = torch.tensor(ys, device=self.cfg.device)
         
         ###### Finish layer ######
         
@@ -304,6 +324,15 @@ class MambaLayer(nn.Module):
         
         return resid
         
+class Timer():
+    def __init__(self, label):
+        self.label = label
+        
+    def __enter__(self):
+        self.start_time = current_milli_time()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        print("elapsed", self.label, current_milli_time() - self.start_time)
 
 class InputDependentHookPoint(HookPoint):
     def __init__(self, input_dependent_postfixes_func):
@@ -311,14 +340,15 @@ class InputDependentHookPoint(HookPoint):
         self.hooks = {}
         self.input_dependent_postfixes_func = input_dependent_postfixes_func
     
-    def add_input_dependent_hooks(self, input_ids):
-        for postfix in self.input_dependent_postfixes_func(input_ids=input_ids):
-            postfix_hook = HookPoint()
-            postfix_hook.name = self.name + postfix
-            self.hooks[postfix] = postfix_hook
-            yield postfix_hook.name, postfix_hook
+    def add_input_dependent_hooks(self, input):
+        for postfix in self.input_dependent_postfixes_func(input=input):
+            if not postfix in self.hooks:
+                postfix_hook = HookPoint()
+                postfix_hook.name = self.name + postfix
+                self.hooks[postfix] = postfix_hook
+                yield self.hooks[postfix].name, self.hooks[postfix]
     
-class InputDependentHookedRootModule(HookedRootModule):
+class InputDependentHookedRootModule(HookedTransformer):
     
     def setup(self):
         # setup hooks
@@ -351,17 +381,17 @@ class InputDependentHookedRootModule(HookedRootModule):
             clear_contexts=False,
             **model_kwargs,
         ):
-            self.setup_input_dependent_hooks(*model_args, **model_kwargs)
-            res = super().run_with_hooks(
-               *model_args,
-                fwd_hooks=fwd_hooks,
-                bwd_hooks=bwd_hooks,
-                reset_hooks_end=reset_hooks_end,
-                clear_contexts=clear_contexts,
-                **model_kwargs
-            )
-            self.cleanup_input_dependent_hooks()
-            return res
+                self.setup_input_dependent_hooks(fwd_hooks=fwd_hooks, bwd_hooks=bwd_hooks, model_args=model_args, model_kwargs=model_kwargs)
+                res = super().run_with_hooks(
+                   *model_args,
+                    fwd_hooks=fwd_hooks,
+                    bwd_hooks=bwd_hooks,
+                    reset_hooks_end=reset_hooks_end,
+                    clear_contexts=clear_contexts,
+                    **model_kwargs
+                )
+                self.done_input_dependent_hooks()
+                return res
     
     def run_with_cache(
             self,
@@ -374,7 +404,16 @@ class InputDependentHookedRootModule(HookedRootModule):
             clear_contexts=False,
             **model_kwargs,
         ):
-            self.setup_input_dependent_hooks(*model_args, **model_kwargs)
+            model_kwargs = dict(list(model_kwargs.items()))
+            fwd_hooks = None
+            if 'fwd_hooks' in model_kwargs:
+                fwd_hooks = model_kwargs['fwd_hooks']
+                del model_kwargs['fwd_hooks']
+            bwd_hooks = None
+            if 'bwd_hooks' in model_kwargs:
+                bwd_hooks = model_kwargs['bwd_hooks']
+                del model_kwargs['bwd_hooks']
+            self.setup_input_dependent_hooks(fwd_hooks=fwd_hooks, bwd_hooks=bwd_hooks, model_args=model_args, model_kwargs=model_kwargs)
             res = super().run_with_cache(
                 *model_args,
                 names_filter=names_filter,
@@ -384,7 +423,7 @@ class InputDependentHookedRootModule(HookedRootModule):
                 reset_hooks_end=reset_hooks_end,
                 clear_contexts=clear_contexts,
                 **model_kwargs)
-            self.cleanup_input_dependent_hooks()
+            self.done_input_dependent_hooks()
             return res
         
     def input_dependent_hooks(self):
@@ -394,37 +433,71 @@ class InputDependentHookedRootModule(HookedRootModule):
             if "InputDependentHookPoint" in str(type(module)):
                 yield name, module
                     
-    def setup_input_dependent_hooks(self, *model_args, **model_kwargs):
-        if 'input_ids' in model_kwargs:
-            input_ids = model_kwargs['input_ids']
+    def setup_input_dependent_hooks(self, fwd_hooks, bwd_hooks, model_args, model_kwargs):
+        if 'input' in model_kwargs:
+            input = model_kwargs['input']
         elif len(model_args) > 0:
-            input_ids = model_args[0]
+            input = model_args[0]
         else:
-            raise Exception(f"Could not find input_ids in args {model_args} and kwargs {model_kwargs}")
-            
+            raise Exception(f"Could not find input in args {model_args} and kwargs {model_kwargs}")
         # make sure input is ids and not a str
-        input_ids = tokenize_if_str(tokenizer=self.tokenizer, input_ids=input_ids)
-        
+        input = tokenize_if_str(tokenizer=self.tokenizer, input=input)
+        input_dependent_lookup = {}
         for name, hook in self.input_dependent_hooks():
-            for added_hook_name, added_hook in hook.add_input_dependent_hooks(input_ids=input_ids):
+            input_dependent_lookup[name] = hook
+        expand_all = False
+        input_dependent = []
+        if fwd_hooks is None:
+            expand_all = True # used for run with cache
+        else:
+            for name, hook in fwd_hooks:
+                if type(name) == str and not name in self.mod_dict:
+                    input_dependent.append(name)
+                else:
+                    expand_all = True # we don't know what things make this eval to true, so expand them all
+          
+        if bwd_hooks is None:
+            expand_all = True
+        else:
+            for name, hook in bwd_hooks:
+                if type(name) == str and not name in self.mod_dict:
+                    input_dependent.append(name)
+                else:
+                    expand_all = True # we don't know what things make this eval to true, so expand them all
+        
+        hooks_to_expand = []
+        if expand_all:
+            hooks_to_expand = list(self.input_dependent_hooks())
+        else:
+            for name in input_dependent:
+                # look for any prefix-matches, if we have them we need to expand them 
+                for input_dependent_name, input_dependent_hook in self.input_dependent_hooks():
+                    if name.startswith(input_dependent_name):
+                        hooks_to_expand.append(input_dependent_name)
+        for name, hook in hooks_to_expand:
+            for added_hook_name, added_hook in hook.add_input_dependent_hooks(input=input):
                 self.mod_dict[added_hook_name] = added_hook
                 self.hook_dict[added_hook_name] = added_hook
         self.did_setup_input_dependent_hooks = True
     
+    def done_input_dependent_hooks(self):
+        self.did_setup_input_dependent_hooks = False
+        
     def cleanup_input_dependent_hooks(self):
         for name, hook in self.input_dependent_hooks():
             for input_dependent_hook_postfix, input_dependent_hook in hook.hooks.items():
                 input_dependent_hook_name = input_dependent_hook.name
-                del self.mod_dict[input_dependent_hook_name]
-                del self.hook_dict[input_dependent_hook_name]
+                if input_dependent_hook_name in self.mod_dict:
+                    del self.mod_dict[input_dependent_hook_name]
+                if input_dependent_hook_name in self.hook_dict:
+                    del self.hook_dict[input_dependent_hook_name]
             hook.hooks = {}
-        self.did_setup_input_dependent_hooks = False
         
 
-def tokenize_if_str(tokenizer, input_ids):
-    if type(input_ids) is str:
-        input_ids = tokenizer(input_ids, return_tensors='pt')['input_ids']
-    return input_ids
+def tokenize_if_str(tokenizer, input):
+    if type(input) is str:
+        input = tokenizer(input, return_tensors='pt')['input_ids']
+    return input
 
 def make_postfix_batch_split(b, l):
     return f".{b}.{l}"
@@ -432,65 +505,90 @@ def make_postfix_batch_split(b, l):
 def make_postfix(l):
     return f".{l}"
 
-def input_dependent_postfixes_batch_split(input_ids):
-    Batch, L = input_ids.size()
+def input_dependent_postfixes_batch_split(input):
+    Batch, L = input.size()
     for b,l in itertools.product(range(Batch), range(L)):
         postfix = make_postfix_batch_split(b=b, l=l)
         yield postfix
         
-def input_dependent_postfixes(input_ids):
-    Batch, L = input_ids.size()
+def input_dependent_postfixes(input):
+    Batch, L = input.size()
     for b,l in itertools.product(range(Batch), range(L)):
         postfix = make_postfix(l=l)
         yield postfix
 
 class HookedMambaBatchSplit(InputDependentHookedRootModule):
-    def __init__(self, args):
-        super().__init__()
-        self.args = args
-        D = args.d_model
-        E = args.d_inner
-        N = args.d_state
-        D_delta = args.dt_rank
-        D_conv = args.d_conv
-        V = args.vocab_size
+    def __init__(self, cfg):
+        super(HookedTransformer, self).__init__()
+        self.cfg = cfg
+        D = cfg.d_model
+        E = cfg.d_inner
+        N = cfg.d_state
+        D_delta = cfg.dt_rank
+        D_conv = cfg.d_conv
+        V = cfg.vocab_size
         
         self.embedding = nn.Embedding(V, D)
         self.hook_embed = HookPoint()
         
-        self.layers = nn.ModuleList([HookedMambaLayerBatchSplit(args=args) for _ in range(args.n_layer)])
+        self.blocks = nn.ModuleList([HookedMambaBlockBatchSplit(cfg=cfg) for _ in range(cfg.n_layers)])
         self.norm = RMSNorm(D)
         self.hook_norm = HookPoint() # [B,L,D]
         self.lm_head  = nn.Linear(D, V, bias=False)
         self.hook_logits = HookPoint() # [B,L,V]
         
         self.tokenizer = AutoTokenizer.from_pretrained(MODEL_TOKENIZER)
+        self.tokenizer.pad_token = self.tokenizer.eos_token
 
         super().setup()
     
         
-    def forward(self, input_ids):
-    
+    def forward(self, 
+        input: Union[
+            str,
+            List[str],
+            Int[torch.Tensor, "B L"],
+            Float[torch.Tensor, "B L E"],
+        ],
+        return_type: Optional[str] = "logits",
+        loss_per_token: Optional[bool] = False,
+        tokens: Optional[Int[torch.Tensor, "B L"]] = None,
+    ) -> Union[
+        None,
+        Float[torch.Tensor, "B L V"],
+        Loss,
+        Tuple[Float[torch.Tensor, "B L V"], Loss],
+    ]:
         # make sure input is ids and not a str
-        input_ids = tokenize_if_str(tokenizer=self.tokenizer, input_ids=input_ids)
+        input = tokenize_if_str(tokenizer=self.tokenizer, input=input)
         
-        args = self.args
-        D = args.d_model
-        E = args.d_inner
-        N = args.d_state
-        D_delta = args.dt_rank
-        D_conv = args.d_conv
-        V = args.vocab_size
+        input = input.to(self.cfg.device)
         
-        Batch,L = input_ids.size()
+        given_tokens = len(input.size()) <= 2
+        
+        if given_tokens:
+            tokens = input
+        
+        cfg = self.cfg
+        D = cfg.d_model
+        E = cfg.d_inner
+        N = cfg.d_state
+        D_delta = cfg.dt_rank
+        D_conv = cfg.d_conv
+        V = cfg.vocab_size
+        
+        Batch,L = input.size()
 
-        # [B,L,D]                         [B,L]
-        resid         = self.embedding(input_ids)
+        if given_tokens:
+            # [B,L,D]                         [B,L]
+            resid         = self.embedding(input)
+        else: #[B,L,D]      [B,L,D]
+            resid         = input
         resid         = self.hook_embed(resid)
         
-        for layer in self.layers:
+        for block in self.blocks:
             # [B,L,D]         [B,L,D]
-            resid     = layer(resid)
+            resid     = block(resid)
          
         # [B,L,D]              [B,L,D]
         resid     = self.norm( resid )
@@ -500,28 +598,45 @@ class HookedMambaBatchSplit(InputDependentHookedRootModule):
         logits    = self.lm_head( resid ) # no bias
         logits    = self.hook_logits(logits) # [B,L,V]
         
-        return logits
+        if return_type is None:
+            return None
+        else:
+            if return_type == "logits":
+                return logits
+            else:
+                assert (
+                    tokens is not None
+                ), "tokens must be passed in if return_type is 'loss' or 'both'"
+                loss = self.loss_fn(logits, tokens, per_token=loss_per_token)
+                if return_type == "loss":
+                    return loss
+                elif return_type == "both":
+                    return Output(logits, loss)
+                else:
+                    logging.warning(f"Invalid return_type passed in: {return_type}")
+                    return None
     
     @staticmethod
-    def from_pretrained(pretrained_model_name):
-        args, state_dict = get_converted_model_from_hf(pretrained_model_name=pretrained_model_name)
-        model = HookedMambaBatchSplit(args)
+    def from_pretrained(pretrained_model_name, device='cuda'):
+        cfg, state_dict = get_converted_model_from_hf(pretrained_model_name=pretrained_model_name, device=device)
+        model = HookedMambaBatchSplit(cfg)
         model.load_state_dict(state_dict)
+        model = model.to(device)
         return model
 
 
-class HookedMambaLayerBatchSplit(nn.Module):
-    def __init__(self, args):
+class HookedMambaBlockBatchSplit(nn.Module):
+    def __init__(self, cfg):
         super().__init__()
-        self.args = args
+        self.cfg = cfg
         
         ## Variables
-        D = args.d_model
-        E = args.d_inner
-        N = args.d_state
-        D_delta = args.dt_rank
-        D_conv = args.d_conv
-        V = args.vocab_size
+        D = cfg.d_model
+        E = cfg.d_inner
+        N = cfg.d_state
+        D_delta = cfg.dt_rank
+        D_conv = cfg.d_conv
+        V = cfg.vocab_size
         
         
         self.hook_resid_pre = HookPoint() # [B,L,D]
@@ -583,13 +698,13 @@ class HookedMambaLayerBatchSplit(nn.Module):
     
     def forward(self, resid):
         
-        args = self.args
-        D = args.d_model
-        E = args.d_inner
-        N = args.d_state
-        D_delta = args.dt_rank
-        D_conv = args.d_conv
-        V = args.vocab_size
+        cfg = self.cfg
+        D = cfg.d_model
+        E = cfg.d_inner
+        N = cfg.d_state
+        D_delta = cfg.dt_rank
+        D_conv = cfg.d_conv
+        V = cfg.vocab_size
         
         Batch,L,D = resid.size()
         
@@ -633,7 +748,7 @@ class HookedMambaLayerBatchSplit(nn.Module):
             ys_b = []
             
             # latent state, init to zeros
-            h = torch.zeros([E,N])
+            h = torch.zeros([E,N], device=self.cfg.device)
             for l in range(L):
                 
                 def apply_hook(hook, value):
@@ -707,7 +822,7 @@ class HookedMambaLayerBatchSplit(nn.Module):
         y = torch.tensor(ys)
         y = self.hook_ssm_output(y) # [B,L,E]
         
-        ###### Finish layer ######
+        ###### Finish block ######
         
         # [B,L,E]  [B,L,E]    [B,L,E]       [E]
         y         =   y      +   x     *  self.W_D
@@ -728,53 +843,84 @@ class HookedMambaLayerBatchSplit(nn.Module):
         return resid
 
 
-
+def current_milli_time():
+    return round(time.time() * 1000)
 
 class HookedMamba(InputDependentHookedRootModule):
-    def __init__(self, args):
-        super().__init__()
-        self.args = args
-        D = args.d_model
-        E = args.d_inner
-        N = args.d_state
-        D_delta = args.dt_rank
-        D_conv = args.d_conv
-        V = args.vocab_size
+    def __init__(self, cfg):
+        super(HookedTransformer, self).__init__()
+        self.cfg = cfg
+        D = cfg.d_model
+        E = cfg.d_inner
+        N = cfg.d_state
+        D_delta = cfg.dt_rank
+        D_conv = cfg.d_conv
+        V = cfg.vocab_size
         
         self.embedding = nn.Embedding(V, D)
         self.hook_embed = HookPoint()
         
-        self.layers = nn.ModuleList([HookedMambaLayer(args=args) for _ in range(args.n_layer)])
+        self.blocks = nn.ModuleList([HookedMambaBlock(cfg=cfg) for _ in range(cfg.n_layers)])
         self.norm = RMSNorm(D)
         self.hook_norm = HookPoint() # [B,L,D]
         self.lm_head  = nn.Linear(D, V, bias=False)
         self.hook_logits = HookPoint() # [B,L,V]
         
         self.tokenizer = AutoTokenizer.from_pretrained(MODEL_TOKENIZER)
+        self.tokenizer.pad_token = self.tokenizer.eos_token
         
         super().setup()
 
         
-    def forward(self, input_ids):
-    
+    def forward(self, 
+        input: Union[
+            str,
+            List[str],
+            Int[torch.Tensor, "B L"],
+            Float[torch.Tensor, "B L E"],
+        ],
+        return_type: Optional[str] = "logits",
+        loss_per_token: Optional[bool] = False,
+        tokens: Optional[Int[torch.Tensor, "B L"]] = None,
+    ) -> Union[
+        None,
+        Float[torch.Tensor, "B L V"],
+        Loss,
+        Tuple[Float[torch.Tensor, "B L V"], Loss],
+    ]:
+        
+        a = current_milli_time()
+        
+        
+        
         # make sure input is ids and not a str
-        input_ids = tokenize_if_str(tokenizer=self.tokenizer, input_ids=input_ids)
+        input = tokenize_if_str(tokenizer=self.tokenizer, input=input)
         
-        args = self.args
-        D = args.d_model
-        E = args.d_inner
-        N = args.d_state
-        D_delta = args.dt_rank
-        D_conv = args.d_conv
-        V = args.vocab_size
+        input = input.to(self.cfg.device)
         
-        Batch,L = input_ids.size()
+        given_tokens = len(input.size()) <= 2
+        
+        if given_tokens:
+            tokens = input
+        
+        cfg = self.cfg
+        D = cfg.d_model
+        E = cfg.d_inner
+        N = cfg.d_state
+        D_delta = cfg.dt_rank
+        D_conv = cfg.d_conv
+        V = cfg.vocab_size
+        
+        Batch,L = input.size()
 
-        # [B,L,D]                         [B,L]
-        resid         = self.embedding(input_ids)
+        if given_tokens:
+            # [B,L,D]                         [B,L]
+            resid         = self.embedding(input)
+        else: #[B,L,D]      [B,L,D]
+            resid         = input
         resid         = self.hook_embed(resid)
         
-        for layer in self.layers:
+        for layer in self.blocks:
             # [B,L,D]         [B,L,D]
             resid     = layer(resid)
          
@@ -786,28 +932,45 @@ class HookedMamba(InputDependentHookedRootModule):
         logits    = self.lm_head( resid ) # no bias
         logits    = self.hook_logits(logits) # [B,L,V]
         
-        return logits
+        if return_type is None:
+            return None
+        else:
+            if return_type == "logits":
+                return logits
+            else:
+                assert (
+                    tokens is not None
+                ), "tokens must be passed in if return_type is 'loss' or 'both'"
+                loss = self.loss_fn(logits, tokens, per_token=loss_per_token)
+                if return_type == "loss":
+                    return loss
+                elif return_type == "both":
+                    return Output(logits, loss)
+                else:
+                    logging.warning(f"Invalid return_type passed in: {return_type}")
+                    return None
     
     @staticmethod
-    def from_pretrained(pretrained_model_name):
-        args, state_dict = get_converted_model_from_hf(pretrained_model_name=pretrained_model_name)
-        model = HookedMamba(args)
+    def from_pretrained(pretrained_model_name, device='cuda'):
+        cfg, state_dict = get_converted_model_from_hf(pretrained_model_name=pretrained_model_name, device=device)
+        model = HookedMamba(cfg)
         model.load_state_dict(state_dict)
+        model = model.to(device)
         return model
 
 
-class HookedMambaLayer(nn.Module):
-    def __init__(self, args):
+class HookedMambaBlock(nn.Module):
+    def __init__(self, cfg):
         super().__init__()
-        self.args = args
+        self.cfg = cfg
         
         ## Variables
-        D = args.d_model
-        E = args.d_inner
-        N = args.d_state
-        D_delta = args.dt_rank
-        D_conv = args.d_conv
-        V = args.vocab_size
+        D = cfg.d_model
+        E = cfg.d_inner
+        N = cfg.d_state
+        D_delta = cfg.dt_rank
+        D_conv = cfg.d_conv
+        V = cfg.vocab_size
         
         
         self.hook_resid_pre = HookPoint() # [B,L,D]
@@ -842,6 +1005,9 @@ class HookedMambaLayer(nn.Module):
         
         self.A_log     = nn.Parameter(torch.log(torch.randn([E,N])))
         
+        
+        self.hook_h_start = HookPoint()     # [B,E,N]
+        
         self.hook_x_l = InputDependentHookPoint(input_dependent_postfixes)   # [B,E], with l param
         self.hook_delta_1 = InputDependentHookPoint(input_dependent_postfixes) # [B,E], with l param
         self.hook_delta_2 = InputDependentHookPoint(input_dependent_postfixes) # [B,E], with l param
@@ -866,16 +1032,22 @@ class HookedMambaLayer(nn.Module):
         self.hook_resid_pre = HookPoint() # [B,L,D]
         self.hook_resid_post = HookPoint() # [B,L,D]
         
+    def has_hooks_in_inner_loop(self):
+        for name, module in self.named_modules():
+            if "InputDependentHookPoint" in str(type(module)):
+                if len(module.fwd_hooks) > 0 or len(module.bwd_hooks) > 0:
+                    return True
+        return False
     
     def forward(self, resid):
         
-        args = self.args
-        D = args.d_model
-        E = args.d_inner
-        N = args.d_state
-        D_delta = args.dt_rank
-        D_conv = args.d_conv
-        V = args.vocab_size
+        cfg = self.cfg
+        D = cfg.d_model
+        E = cfg.d_inner
+        N = cfg.d_state
+        D_delta = cfg.dt_rank
+        D_conv = cfg.d_conv
+        V = cfg.vocab_size
         
         Batch,L,D = resid.size()
         
@@ -911,92 +1083,147 @@ class HookedMambaLayer(nn.Module):
         x         = self.hook_ssm_input(x) # [B,L,E]
         
         ###### SSM ######
-        
-        # W_delta is factored into two matrices W_delta_1 and W_delta_2, combine them back
-        # [E,E] =          [E,D_delta]         [D_delta, E]
-        W_delta = self.W_delta_1.weight.T @ self.W_delta_2.weight.T
        
         self.A = -torch.exp(self.A_log)
        
         ys = []
-            
+       
         # latent state, init to zeros
-        h = torch.zeros([Batch,E,N])
-        for l in range(L):
-            
-            def apply_hook(hook, value):
-                postfix = make_postfix(l=l)
-                if postfix in hook.hooks:
-                    input_dependent_hook = hook.hooks[postfix]
-                    input_dependent_hook.l = l
-                    return input_dependent_hook(value)
-                else: # not setup, maybe called forward by itself?
-                    return value
-            
-            x[:,l] = apply_hook(self.hook_x_l, x[:,l]) # [B,E]
-            #### First, discretization: A and B -> A_bar and B_bar ####
-            ## Compute Delta ##
-            # [B,D_delta] [E->D_delta][B,E]
-            delta1  = self.W_delta_1(x[:,l]) # no bias
-            delta1  = apply_hook(self.hook_delta_1, delta1) # [B,D_delta]
-            
-            # [B,E]     [D_delta->E] [B,D_delta] 
-            delta2  = self.W_delta_2(delta1) # with bias
-            delta2  = apply_hook(self.hook_delta_2, delta2) # [B,E]
-            
-            # [B,E]             [B,E]
-            delta  = F.softplus(delta2) 
-            delta  = apply_hook(self.hook_delta, delta) # [B,E]
-            
-            ## Discretize A -> A_bar ##
-            # (note [B,E,1]*[E,N] will first repeat the [B,E,1] N times so its like [B,E,N])
-            # then we just do element-wise mulitply
-            # [B,E,N]             (     [B,E,1]      *  [E,N] ) 
-            A_bar    = torch.exp(delta.view(Batch,E,1) * self.A)
-            A_bar = apply_hook(self.hook_A_bar, A_bar) # [B,E,N]
-            
-            ## Discretize B -> B_bar ##
-            # [B,N]     [E->N] [B,E]
-            B        = self.W_B(x[:,l]) # no bias
-            B  = apply_hook(self.hook_B, B) # [B,N]
-            
-            # [B,E,N]        [B,E,1]       x    [B,1,N] (this is just like a [E,1]*[1,N] for each b)
-            B_bar    = delta.view(Batch,E,1) @ B.view(Batch,1,N)
-            B_bar = apply_hook(self.hook_B_bar, B_bar) # [B,E,N]
-            
-            #### Update latent vector h ####
-            ## input floats for the ssm at time l
-            # [B,E]    [B,E]
-            x_l      = x[:,l]
-            
-            ## Move ahead by one step
-            # (note, [B,E,N]*[B,E,1] will first repeat the [B,E,1] N times so its like [B,E,N])
-            # (then just do element-wise multiply)
-            # [B,E,N] [B,E,N] [B,E,N]  [B,E,N]     [B,E,1]
-            h        = A_bar *  h    +   B_bar  *  x_l.view(E,1)
-            h        = apply_hook(self.hook_h, h) # [B,E,N]
-            
-            #### Compute output float y ####
-            ## (C matrix needed for computing y)
-            # [B,N]     [E->N]  [B,E]
-            C        = self.W_C(x[:,l]) # no bias
-            C        = apply_hook(self.hook_C, C) # [B,N]
-            
-            ## Output floats y at time l
-            # [B,E,1]   [B,E,N]  x  [B,N,1]  # this is just a [E,N] x [N,1] for each batch
-            y_l      =     h    @ C.view(N,1)
-            # [B,E]              [B,E,1]
-            y_l      =    y_l.view(Batch,E)
-            y_l      = apply_hook(self.hook_y_l, y_l) # [B,E]
-            
-            ys.append(y_l)
+        h = torch.zeros([Batch,E,N], device=self.cfg.device)
+        h = self.hook_h_start(h) 
         
+        # do things the slow way if we have hooks
+        if self.has_hooks_in_inner_loop():
+            for l in range(L):
+                
+                def apply_hook(hook, value):
+                    postfix = make_postfix(l=l)
+                    if postfix in hook.hooks:
+                        input_dependent_hook = hook.hooks[postfix]
+                        input_dependent_hook.l = l
+                        return input_dependent_hook(value)
+                    else: # not setup, maybe called forward by itself?
+                        return value
+                
+                x[:,l] = apply_hook(self.hook_x_l, x[:,l]) # [B,E]
+                #### First, discretization: A and B -> A_bar and B_bar ####
+                ## Compute Delta ##
+                # [B,D_delta] [E->D_delta][B,E]
+                delta1  = self.W_delta_1(x[:,l]) # no bias
+                delta1  = apply_hook(self.hook_delta_1, delta1) # [B,D_delta]
+                
+                # [B,E]     [D_delta->E] [B,D_delta] 
+                delta2  = self.W_delta_2(delta1) # with bias
+                delta2  = apply_hook(self.hook_delta_2, delta2) # [B,E]
+                
+                # [B,E]             [B,E]
+                delta  = F.softplus(delta2) 
+                delta  = apply_hook(self.hook_delta, delta) # [B,E]
+                
+                ## Discretize A -> A_bar ##
+                # (note [B,E,1]*[E,N] will first repeat the [B,E,1] N times so its like [B,E,N])
+                # then we just do element-wise mulitply
+                # [B,E,N]             (     [B,E,1]      *  [E,N] ) 
+                A_bar    = torch.exp(delta.view(Batch,E,1) * self.A)
+                A_bar = apply_hook(self.hook_A_bar, A_bar) # [B,E,N]
+                
+                ## Discretize B -> B_bar ##
+                # [B,N]     [E->N] [B,E]
+                B        = self.W_B(x[:,l]) # no bias
+                B  = apply_hook(self.hook_B, B) # [B,N]
+                
+                # [B,E,N]        [B,E,1]       x    [B,1,N] (this is just like a [E,1]*[1,N] for each b)
+                B_bar    = delta.view(Batch,E,1) @ B.view(Batch,1,N)
+                B_bar = apply_hook(self.hook_B_bar, B_bar) # [B,E,N]
+                
+                #### Update latent vector h ####
+                ## input floats for the ssm at time l
+                # [B,E]    [B,E]
+                x_l      = x[:,l]
+                
+                ## Move ahead by one step
+                # (note, [B,E,N]*[B,E,1] will first repeat the [B,E,1] N times so its like [B,E,N])
+                # (then just do element-wise multiply)
+                # [B,E,N] [B,E,N] [B,E,N]  [B,E,N]     [B,E,1]
+                h        = A_bar *  h    +   B_bar  *  x_l.view(Batch,E,1)
+                h        = apply_hook(self.hook_h, h) # [B,E,N]
+                
+                #### Compute output float y ####
+                ## (C matrix needed for computing y)
+                # [B,N]     [E->N]  [B,E]
+                C        = self.W_C(x[:,l]) # no bias
+                C        = apply_hook(self.hook_C, C) # [B,N]
+                
+                ## Output floats y at time l
+                # [B,E,1]   [B,E,N]  x  [B,N,1]  # this is just a [E,N] x [N,1] for each batch
+                y_l      =     h    @ C.view(Batch,N,1)
+                # [B,E]              [B,E,1]
+                y_l      =    y_l.view(Batch,E)
+                y_l      = apply_hook(self.hook_y_l, y_l) # [B,E]
+                
+                ys.append(y_l)
+        
+        # we don't have hooks in this loop, go speedy (costs more memory)
+        else:
+            
+            ### This is simply computing the delta, A_bar, B_bar, and C from above all ahead of time,
+            ### since none of them depend on h
+            
+            ## Compute delta
+            # this just applies the projections to each E-sized vector (note, W_delta_1 has no bias, W_delta_2 has a bias)
+            # [B,L,E]                 [D_delta->E]     [E->D_delta] [B,L,E]    
+            delta      = F.softplus(self.W_delta_2(    self.W_delta_1( x )))
+            
+            ## Discretize A
+            # [B,L,E,N]                    [B,L,E] [E,N]
+            A_bar       = torch.exp(einsum(delta, self.A, 'b l e, e n -> b l e n'))
+            
+            ## Discretize B (also, multiply by x ahead of time)
+            
+            # [B,L,N]     [E->N]   [B,L,E]
+            B           = self.W_B(   x   )
+            
+            # [B,L,E,N]           [B,L,E]  [B,L,N]  [B,L,E]
+            B_bar       =  einsum( delta,    B,        x,       'b l e, b l n, b l e -> b l e n')
+            
+            ## C
+            # this just applies E->N projection to each E-sized vector
+            # [B,L,N]             [E->N]  [B,L,E]     
+            C           =        self.W_C(   x   ) # no bias
+            
+            # Now we do the recurrence
+            ys = []
+            
+            h = torch.zeros([Batch,E,N], device=self.cfg.device)
+            for l in range(L):
+                
+                def apply_hook(hook, value):
+                    postfix = make_postfix(l=l)
+                    if postfix in hook.hooks:
+                        input_dependent_hook = hook.hooks[postfix]
+                        input_dependent_hook.l = l
+                        return input_dependent_hook(value)
+                    else: # not setup, maybe called forward by itself?
+                        return value
+                
+                # [B,E,N]   [B,E,N]     [B,E,N]          [B,E,N] 
+                h         =    h    *  A_bar[:,l,:,:]  + B_bar[:,l,:,:]
+                h        = apply_hook(self.hook_h, h) # [B,E,N]
+                
+                # [B,E]    [B,E,N]       [B,N,1]   # this is like [E,N] x [N,1] for each batch
+                y_l       =   h     @   C[:,l,:].view(Batch,N,1)
+                # [B,E]              [B,E,1]
+                y_l      =    y_l.view(Batch,E)
+                y_l      = apply_hook(self.hook_y_l, y_l) # [B,E]
+                
+                ys.append(y_l)
+            
         # we have lots of [B,E]
         # we need to stack them along the 1 dimension to get [B,L,E]
         y = torch.stack(ys, dim=1)
         y = self.hook_ssm_output(y) # [B,L,E]
         
-        ###### Finish layer ######
+        ###### Finish block ######
         
         # [B,L,E]  [B,L,E]    [B,L,E]       [E]
         y         =   y      +   x     *  self.W_D
@@ -1011,7 +1238,7 @@ class HookedMambaLayer(nn.Module):
         y         = self.hook_resid_pre(y) # [B,L,D]
     
         # [B,L,D]     [B,L,D]
-        resid     +=     y
+        resid         +=     y
         resid         = self.hook_resid_post(resid) # [B,L,D]
         
         return resid
