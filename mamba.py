@@ -1008,15 +1008,17 @@ class HookedMambaBlock(nn.Module):
         
         self.hook_h_start = HookPoint()     # [B,E,N]
         
-        self.hook_x_l = InputDependentHookPoint(input_dependent_postfixes)   # [B,E], with l param
-        self.hook_delta_1 = InputDependentHookPoint(input_dependent_postfixes) # [B,E], with l param
-        self.hook_delta_2 = InputDependentHookPoint(input_dependent_postfixes) # [B,E], with l param
-        self.hook_delta = InputDependentHookPoint(input_dependent_postfixes) # [B,E], with l param
-        self.hook_A_bar = InputDependentHookPoint(input_dependent_postfixes) # [B,E,N], with l param
-        self.hook_B = InputDependentHookPoint(input_dependent_postfixes)     # [B,N], with l param
-        self.hook_B_bar = InputDependentHookPoint(input_dependent_postfixes) # [B,E,N], with l param
+        self.hook_delta_1 = HookPoint() # [B,L,E]
+        self.hook_delta_2 = HookPoint() # [B,L,E]
+        self.hook_delta = HookPoint() # [B,L,E]
+        
+        self.hook_A_bar = HookPoint() # [B,L,E,N]
+        self.hook_B = HookPoint()     # [B,L,N]
+        self.hook_B_bar = HookPoint() # [B,L,E,N]
+        
+        self.hook_C = HookPoint()     # [B,L,N]
+        
         self.hook_h = InputDependentHookPoint(input_dependent_postfixes)     # [B,E,N], with l param
-        self.hook_C = InputDependentHookPoint(input_dependent_postfixes)     # [B,N], with l param
         self.hook_y_l = InputDependentHookPoint(input_dependent_postfixes)   # [B,E], with l param
         
         self.hook_ssm_output = HookPoint() # [B,L,E]
@@ -1093,130 +1095,141 @@ class HookedMambaBlock(nn.Module):
         h = self.hook_h_start(h) 
         
         # do things the slow way if we have hooks
-        if self.has_hooks_in_inner_loop():
-            for l in range(L):
-                
-                def apply_hook(hook, value):
-                    postfix = make_postfix(l=l)
-                    if postfix in hook.hooks:
-                        input_dependent_hook = hook.hooks[postfix]
-                        input_dependent_hook.l = l
-                        return input_dependent_hook(value)
-                    else: # not setup, maybe called forward by itself?
-                        return value
-                
-                x[:,l] = apply_hook(self.hook_x_l, x[:,l]) # [B,E]
-                #### First, discretization: A and B -> A_bar and B_bar ####
-                ## Compute Delta ##
-                # [B,D_delta] [E->D_delta][B,E]
-                delta1  = self.W_delta_1(x[:,l]) # no bias
-                delta1  = apply_hook(self.hook_delta_1, delta1) # [B,D_delta]
-                
-                # [B,E]     [D_delta->E] [B,D_delta] 
-                delta2  = self.W_delta_2(delta1) # with bias
-                delta2  = apply_hook(self.hook_delta_2, delta2) # [B,E]
-                
-                # [B,E]             [B,E]
-                delta  = F.softplus(delta2) 
-                delta  = apply_hook(self.hook_delta, delta) # [B,E]
-                
-                ## Discretize A -> A_bar ##
-                # (note [B,E,1]*[E,N] will first repeat the [B,E,1] N times so its like [B,E,N])
-                # then we just do element-wise mulitply
-                # [B,E,N]             (     [B,E,1]      *  [E,N] ) 
-                A_bar    = torch.exp(delta.view(Batch,E,1) * self.A)
-                A_bar = apply_hook(self.hook_A_bar, A_bar) # [B,E,N]
-                
-                ## Discretize B -> B_bar ##
-                # [B,N]     [E->N] [B,E]
-                B        = self.W_B(x[:,l]) # no bias
-                B  = apply_hook(self.hook_B, B) # [B,N]
-                
-                # [B,E,N]        [B,E,1]       x    [B,1,N] (this is just like a [E,1]*[1,N] for each b)
-                B_bar    = delta.view(Batch,E,1) @ B.view(Batch,1,N)
-                B_bar = apply_hook(self.hook_B_bar, B_bar) # [B,E,N]
-                
-                #### Update latent vector h ####
-                ## input floats for the ssm at time l
-                # [B,E]    [B,E]
-                x_l      = x[:,l]
-                
-                ## Move ahead by one step
-                # (note, [B,E,N]*[B,E,1] will first repeat the [B,E,1] N times so its like [B,E,N])
-                # (then just do element-wise multiply)
-                # [B,E,N] [B,E,N] [B,E,N]  [B,E,N]     [B,E,1]
-                h        = A_bar *  h    +   B_bar  *  x_l.view(Batch,E,1)
-                h        = apply_hook(self.hook_h, h) # [B,E,N]
-                
-                #### Compute output float y ####
-                ## (C matrix needed for computing y)
-                # [B,N]     [E->N]  [B,E]
-                C        = self.W_C(x[:,l]) # no bias
-                C        = apply_hook(self.hook_C, C) # [B,N]
-                
-                ## Output floats y at time l
-                # [B,E,1]   [B,E,N]  x  [B,N,1]  # this is just a [E,N] x [N,1] for each batch
-                y_l      =     h    @ C.view(Batch,N,1)
-                # [B,E]              [B,E,1]
-                y_l      =    y_l.view(Batch,E)
-                y_l      = apply_hook(self.hook_y_l, y_l) # [B,E]
-                
-                ys.append(y_l)
+        '''
+        for l in range(L):
+            
+            def apply_hook(hook, value):
+                postfix = make_postfix(l=l)
+                if postfix in hook.hooks:
+                    input_dependent_hook = hook.hooks[postfix]
+                    input_dependent_hook.l = l
+                    return input_dependent_hook(value)
+                else: # not setup, maybe called forward by itself?
+                    return value
+            
+            x[:,l] = apply_hook(self.hook_x_l, x[:,l]) # [B,E]
+            #### First, discretization: A and B -> A_bar and B_bar ####
+            ## Compute Delta ##
+            # [B,D_delta] [E->D_delta][B,E]
+            delta1  = self.W_delta_1(x[:,l]) # no bias
+            delta1  = apply_hook(self.hook_delta_1, delta1) # [B,D_delta]
+            
+            # [B,E]     [D_delta->E] [B,D_delta] 
+            delta2  = self.W_delta_2(delta1) # with bias
+            delta2  = apply_hook(self.hook_delta_2, delta2) # [B,E]
+            
+            # [B,E]             [B,E]
+            delta  = F.softplus(delta2) 
+            delta  = apply_hook(self.hook_delta, delta) # [B,E]
+            
+            ## Discretize A -> A_bar ##
+            # (note [B,E,1]*[E,N] will first repeat the [B,E,1] N times so its like [B,E,N])
+            # then we just do element-wise mulitply
+            # [B,E,N]             (     [B,E,1]      *  [E,N] ) 
+            A_bar    = torch.exp(delta.view(Batch,E,1) * self.A)
+            A_bar = apply_hook(self.hook_A_bar, A_bar) # [B,E,N]
+            
+            ## Discretize B -> B_bar ##
+            # [B,N]     [E->N] [B,E]
+            B        = self.W_B(x[:,l]) # no bias
+            B  = apply_hook(self.hook_B, B) # [B,N]
+            
+            # [B,E,N]        [B,E,1]       x    [B,1,N] (this is just like a [E,1]*[1,N] for each b)
+            B_bar    = delta.view(Batch,E,1) @ B.view(Batch,1,N)
+            B_bar = apply_hook(self.hook_B_bar, B_bar) # [B,E,N]
+            
+            #### Update latent vector h ####
+            ## input floats for the ssm at time l
+            # [B,E]    [B,E]
+            x_l      = x[:,l]
+            
+            ## Move ahead by one step
+            # (note, [B,E,N]*[B,E,1] will first repeat the [B,E,1] N times so its like [B,E,N])
+            # (then just do element-wise multiply)
+            # [B,E,N] [B,E,N] [B,E,N]  [B,E,N]     [B,E,1]
+            h        = A_bar *  h    +   B_bar  *  x_l.view(Batch,E,1)
+            h        = apply_hook(self.hook_h, h) # [B,E,N]
+            
+            #### Compute output float y ####
+            ## (C matrix needed for computing y)
+            # [B,N]     [E->N]  [B,E]
+            C        = self.W_C(x[:,l]) # no bias
+            C        = apply_hook(self.hook_C, C) # [B,N]
+            
+            ## Output floats y at time l
+            # [B,E,1]   [B,E,N]  x  [B,N,1]  # this is just a [E,N] x [N,1] for each batch
+            y_l      =     h    @ C.view(Batch,N,1)
+            # [B,E]              [B,E,1]
+            y_l      =    y_l.view(Batch,E)
+            y_l      = apply_hook(self.hook_y_l, y_l) # [B,E]
+            
+            ys.append(y_l)
+        '''
+        # go speedy (costs more memory, gives 1.85x speedup)
         
-        # we don't have hooks in this loop, go speedy (costs more memory)
-        else:
+        ### This is simply computing the delta, A_bar, B_bar, and C from above all ahead of time,
+        ### since none of them depend on h
+        
+        ## Compute Delta ##
+        # [B,L,D_delta] [E->D_delta]  [B,E]
+        delta1        = self.W_delta_1( x ) # no bias
+        delta1        = self.hook_delta_1(delta1) # [B,L,D_delta]
+        
+        # [B,L,E]         [D_delta->E] [B,L,D_delta] 
+        delta2        = self.W_delta_2(  delta1  ) # with bias
+        delta2        = self.hook_delta_2(delta2) # [B,E]
+        
+        # [B,L,E]           [B,L,E]
+        delta  = F.softplus(delta2) 
+        delta  = self.hook_delta(delta) # [B,L,E]
+        
+        ## Discretize A
+        # [B,L,E,N]                    [B,L,E] [E,N]
+        A_bar       = torch.exp(einsum(delta, self.A, 'b l e, e n -> b l e n'))
+        A_bar       = self.hook_A_bar(A_bar) # [B,L,E,N]
+        
+        ## Discretize B (also, multiply by x ahead of time)
+        
+        # [B,L,N]     [E->N]   [B,L,E]
+        B           = self.W_B(   x   )
+        B           = self.hook_B(B) # [B,L,N]
+        
+        # [B,L,E,N]          [B,L,E]  [B,L,N] 
+        B_bar       = einsum( delta,    B,     'b l e, b l n -> b l e n')
+        B_bar       = self.hook_B_bar(B_bar) # [B,L,E,N]
+        
+        ## C
+        # this just applies E->N projection to each E-sized vector
+        # [B,L,N]      [E->N]  [B,L,E]     
+        C           = self.W_C(   x   ) # no bias
+        C           = self.hook_C(C) # [B,L,E,N]
+        
+        # Now we do the recurrence
+        ys = []
+        
+        h = torch.zeros([Batch,E,N], device=self.cfg.device)
+        for l in range(L):
             
-            ### This is simply computing the delta, A_bar, B_bar, and C from above all ahead of time,
-            ### since none of them depend on h
+            def apply_hook(hook, value):
+                postfix = make_postfix(l=l)
+                if postfix in hook.hooks:
+                    input_dependent_hook = hook.hooks[postfix]
+                    input_dependent_hook.l = l
+                    return input_dependent_hook(value)
+                else: # not setup, maybe called forward by itself?
+                    return value
             
-            ## Compute delta
-            # this just applies the projections to each E-sized vector (note, W_delta_1 has no bias, W_delta_2 has a bias)
-            # [B,L,E]                 [D_delta->E]     [E->D_delta] [B,L,E]    
-            delta      = F.softplus(self.W_delta_2(    self.W_delta_1( x )))
+            # [B,E,N]   [B,E,N]     [B,E,N]          [B,E,N]          [B,E]
+            h         =    h    *  A_bar[:,l,:,:]  + B_bar[:,l,:,:] * x[:,l].view(Batch, E, 1)
+            h        = apply_hook(self.hook_h, h) # [B,E,N]
             
-            ## Discretize A
-            # [B,L,E,N]                    [B,L,E] [E,N]
-            A_bar       = torch.exp(einsum(delta, self.A, 'b l e, e n -> b l e n'))
+            # [B,E]    [B,E,N]       [B,N,1]   # this is like [E,N] x [N,1] for each batch
+            y_l       =   h     @   C[:,l,:].view(Batch,N,1)
+            # [B,E]              [B,E,1]
+            y_l      =    y_l.view(Batch,E)
+            y_l      = apply_hook(self.hook_y_l, y_l) # [B,E]
             
-            ## Discretize B (also, multiply by x ahead of time)
-            
-            # [B,L,N]     [E->N]   [B,L,E]
-            B           = self.W_B(   x   )
-            
-            # [B,L,E,N]           [B,L,E]  [B,L,N]  [B,L,E]
-            B_bar       =  einsum( delta,    B,        x,       'b l e, b l n, b l e -> b l e n')
-            
-            ## C
-            # this just applies E->N projection to each E-sized vector
-            # [B,L,N]             [E->N]  [B,L,E]     
-            C           =        self.W_C(   x   ) # no bias
-            
-            # Now we do the recurrence
-            ys = []
-            
-            h = torch.zeros([Batch,E,N], device=self.cfg.device)
-            for l in range(L):
-                
-                def apply_hook(hook, value):
-                    postfix = make_postfix(l=l)
-                    if postfix in hook.hooks:
-                        input_dependent_hook = hook.hooks[postfix]
-                        input_dependent_hook.l = l
-                        return input_dependent_hook(value)
-                    else: # not setup, maybe called forward by itself?
-                        return value
-                
-                # [B,E,N]   [B,E,N]     [B,E,N]          [B,E,N] 
-                h         =    h    *  A_bar[:,l,:,:]  + B_bar[:,l,:,:]
-                h        = apply_hook(self.hook_h, h) # [B,E,N]
-                
-                # [B,E]    [B,E,N]       [B,N,1]   # this is like [E,N] x [N,1] for each batch
-                y_l       =   h     @   C[:,l,:].view(Batch,N,1)
-                # [B,E]              [B,E,1]
-                y_l      =    y_l.view(Batch,E)
-                y_l      = apply_hook(self.hook_y_l, y_l) # [B,E]
-                
-                ys.append(y_l)
+            ys.append(y_l)
             
         # we have lots of [B,E]
         # we need to stack them along the 1 dimension to get [B,L,E]
