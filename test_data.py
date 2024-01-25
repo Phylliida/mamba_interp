@@ -346,12 +346,20 @@ ANIMALS = [
 
 NOUNS_DICT = {"[PLACE]": PLACES, "[OBJECT]": OBJECTS}
 
+# from https://stackoverflow.com/a/2556252
+# replaces the last occurance instances of old with new
+# (so if occurance is 1, it replaces the last instance of old with new)
+# (if occurance is 2, it replaces the last two instances of old with new)
+# etc.
+def replace_n_last_occurance(s, old, new, n):
+    li = s.rsplit(old, n)
+    return new.join(li)
 
 def gen_prompt_uniform(
     templates, names, nouns_dict, N, symmetric, prefixes=None, abc=False, seed=None,
 ):
-    assert seed is not None
-    random.seed(seed)
+    if seed is not None:
+        random.seed(seed)
 
     nb_gen = 0
     ioi_prompts = []
@@ -398,11 +406,11 @@ def gen_prompt_uniform(
         nb_gen += 1
 
         if symmetric and nb_gen < N:
-            prompt2 = prompt.replace("[A]", name_2)
-            prompt2 = prompt2.replace("[B]", name_1)
+            # note this is modified from the original, we just replace the last occurance which makes them swapped
+            prompt2 = replace_n_last_occurance(prompt1, name_2, name_1, 1)
+            prompt2 = replace_n_last_occurance(prompt2, name_1, name_2, 1)
+            print(repr(prompt2))
             prompt2 = pref + prompt2
-            if abc:
-                prompt2 = prompt2.replace("[C]", name_3)
             ioi_prompts.append(
                 {"text": prompt2, "IO": name_2, "S": name_1, "TEMPLATE_IDX": temp_id}
             )
@@ -419,15 +427,36 @@ def strip_to_first_token(tokenizer, s):
         raise Exception(f"when turned into single token {s} becomes only whitespace")
     return res
 
+
+
+
+
 def IOI_generator(tokenizer, num_examples, seed=27, templates=None, symmetric=True):
     abc = False
     for template in templates:
         if '[C]' in template:
             abc = True
             
-    prompts = gen_prompt_uniform(templates=templates, names=NAMES, nouns_dict=NOUNS_DICT, N=num_examples, symmetric=symmetric, abc=abc, seed=seed)
+            
+    # make sure they are the same number of tokens so interventions line up
+    noun_dict = {}
+    for k,v in NOUNS_DICT.items():
+        noun_dict[k] = restrict_to_most_common_size(tokenizer, v, with_space=True)
+    
+    with open("first-names.txt", "r") as f:
+        names = [x.strip() for x in f.read().split("\n") if len(x.strip()) > 0]
+        
+    names = restrict_to_most_common_size(tokenizer, names, with_space=True, force_size=1)
+    
+    print("nouns", noun_dict)
+    
+    print("names", names)
+            
+    prompts = gen_prompt_uniform(templates=templates, names=names, nouns_dict=noun_dict, N=num_examples, symmetric=symmetric, abc=abc, seed=seed)
     for prompt in prompts:
         indirect_object = prompt['IO']
+        print("prompt", prompt['text'])
+        print("io", indirect_object)
         prompt_text = prompt['text'].strip()[:-len(indirect_object)-1] # -1 for space
         # the strip_to_first_token is necessary because some names are multiple tokens, we only care about first token output
         correct = [strip_to_first_token(tokenizer, " "  + prompt['IO'])] # space before is important so it is a single token
@@ -441,6 +470,27 @@ def IOI_generator(tokenizer, num_examples, seed=27, templates=None, symmetric=Tr
 
 
 ###################################################################
+
+
+
+# restricts words to only words with the same size tokens
+# it choses which size to use based on whichever is most common among the words
+# if with_space is true, it considers tokenization when a space is added in front of the word
+def restrict_to_most_common_size(tokenizer, words, with_space=False, force_size=None):
+    sizes = defaultdict(lambda: 0)
+    
+    if with_space:
+        tokenized_words = [tokenizer.encode(" "  + word) for word in words]
+    else:
+        tokenized_words = [tokenizer.encode(word) for word in words]
+    
+    for toks in tokenized_words:
+        sizes[len(toks)] += 1
+    biggest_size, biggest_count = max(sizes.items(), key=lambda x: -x[1])
+    if force_size:
+        biggest_size = force_size
+    return [word for toks, word in zip(tokenized_words, words) if len(toks) == biggest_size]
+
 
 
 
