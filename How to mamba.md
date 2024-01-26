@@ -652,6 +652,9 @@ def ssm(layer, x):
     # [E,E] =          [E,D_delta]         [D_delta, E]
     W_delta = layer.W_delta_1.weight.T @ layer.W_delta_2.weight.T
         
+    # stored as A_log
+    layer.A = -torch.exp(layer.A_log)
+
     ys = []
     # every pair (b,e) has a 1-D ssm
     for b in range(Batch):
@@ -716,6 +719,10 @@ def ssm(layer, x):
 ```python
 def ssm(layer, x):
     ys = []
+
+    # stored as A_log
+    layer.A = -torch.exp(layer.A_log)
+
     for b in range(Batch):
         ys_b = []
         
