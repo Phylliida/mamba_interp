@@ -112,8 +112,27 @@ class ModelCfg:
         if self.vocab_size % self.pad_vocab_size_multiple != 0:
             self.vocab_size += (self.pad_vocab_size_multiple
                                 - self.vocab_size % self.pad_vocab_size_multiple)
-
-
+    
+        
+    @property
+    def D(self):
+        return self.d_model
+    @property
+    def E(self):
+        return self.d_inner
+    @property
+    def N(self):
+        return self.d_state
+    @property
+    def D_delta(self):
+        return self.dt_rank
+    @property
+    def D_conv(self):
+        return self.d_conv
+    @property
+    def V(self):
+        return self.vocab_size
+        
 
 class RMSNorm(nn.Module):
     def __init__(self,
@@ -673,7 +692,7 @@ class HookedMambaBlockBatchSplit(nn.Module):
         
         
         self.hook_x_l = InputDependentHookPoint(input_dependent_postfixes_batch_split)   # [E], with b and l param
-        self.hook_delta_1 = InputDependentHookPoint(input_dependent_postfixes_batch_split) # [E], with b and l param
+        self.hook_delta_1 = InputDependentHookPoint(input_dependent_postfixes_batch_split) # [D_delta], with b and l param
         self.hook_delta_2 = InputDependentHookPoint(input_dependent_postfixes_batch_split) # [E], with b and l param
         self.hook_delta = InputDependentHookPoint(input_dependent_postfixes_batch_split) # [E], with b and l param
         self.hook_A_bar = InputDependentHookPoint(input_dependent_postfixes_batch_split) # [E,N], with b and l param
@@ -1008,7 +1027,7 @@ class HookedMambaBlock(nn.Module):
         
         self.hook_h_start = HookPoint()     # [B,E,N]
         
-        self.hook_delta_1 = HookPoint() # [B,L,E]
+        self.hook_delta_1 = HookPoint() # [B,L,D_delta]
         self.hook_delta_2 = HookPoint() # [B,L,E]
         self.hook_delta = HookPoint() # [B,L,E]
         
