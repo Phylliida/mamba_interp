@@ -41,7 +41,7 @@ def get_converted_model_from_hf(pretrained_model_name, device='cuda'):
     def load_state_dict_hf(model_name, device=None, dtype=None):
         resolved_archive_file = cached_file(model_name, WEIGHTS_NAME,
                                             _raise_exceptions_for_missing_entries=False)
-        return torch.load(resolved_archive_file, weights_only=True, map_location='cpu', mmap=True)
+        return torch.load(resolved_archive_file, weights_only=True, map_location='cpu')
         
     config_data = load_config_hf(pretrained_model_name)
     cfg = ModelCfg(
@@ -323,6 +323,98 @@ class MambaBlock(nn.Module):
                 # [E,1]      [E,N]  x   [N,1]
                 y_l      =     h    @ C.view(N,1)
                 
+                ys_b.append([y.float() for y in y_l.flatten()])
+            ys.append(ys_b)
+        # [B,L,E]
+        y = torch.tensor(ys, device=self.cfg.device)
+        
+        ###### Finish layer ######
+        
+        # [B,L,E]  [B,L,E]    [B,L,E]       [E]
+        y         =   y      +   x     *  self.W_D
+        # [B,L,E]  [B,L,E]          [B,L,E]
+        y         =   y      * F.silu(  skip  )
+        
+        # [B,L,D]         [E->D]  [B,L,E]
+        y         = self.out_proj(   y   ) # no bias
+    
+        # [B,L,D]     [B,L,D]
+        resid     +=     y
+        
+        return resid
+
+    
+    def forward_e(self, resid):
+        
+        cfg = self.cfg
+        D = cfg.d_model
+        E = cfg.d_inner
+        N = cfg.d_state
+        D_delta = cfg.dt_rank
+        D_conv = cfg.d_conv
+        V = cfg.vocab_size
+        
+        Batch,L,D = resid.size()
+        
+        ###### Process inputs ######
+        # [B,L,D]             [B,L,D]
+        x         = self.norm(  resid  )
+        # [B,L,E]         [D->E]  [B,L,D]
+        skip      = self.skip_proj(  x  ) # no bias
+        # [B,L,E]         [D->E] [B,L,D]
+        x         = self.in_proj(  x  ) # no bias
+        
+        ###### Conv ######
+        # [B,E,L]
+        x         = rearrange(x, 'B L E -> B E L')
+        # [B E L]                [B,E,L]  conv1d outputs [B,E,3+L], cut off last 3
+        x         = self.conv1d(   x   )[:, :, :L]
+        # [B,L,E]
+        x         = rearrange(x, 'B E L -> B L E')
+
+        ###### Nonlinearity  ######
+        # [B,L,E]          [B,L,E]
+        x         = F.silu(  x   )
+        
+        ###### SSM ######
+        
+        self.A = -torch.exp(self.A_log)
+       
+        ys = []
+        for b in range(Batch):
+            ys_b = []
+            
+            # latent state, init to zeros
+            h = torch.zeros([E,N], device=self.cfg.device)
+            for l in range(L):
+                ## Compute Delta ##
+                # [E]                     [D_delta->E] + [E->D_delta] [E]
+                delta_l    = F.softplus(self.W_delta_2(self.W_delta_1(x[b,l])))
+                
+                for n in range(N):
+                    ## Discretize A -> A_bar ##
+                    # [E]                   ( [E]    *  [E] ) 
+                    A_bar_l_n    = torch.exp(delta_l * self.A[:,n])
+
+                    ## Discretize B -> B_bar ##
+                    # [1]                [E]    dot      [E]
+                    B_l_n     = self.W_B.weight[n,:].dot(x[b,l]) # no bias
+                    # [E]       [E]       x     [1]
+                    B_bar_l_n = delta_l    *    B_l_n
+
+                    #### Update latent vector h ####
+                    ## Move ahead by one step
+                    # [E]      [E]     [E]     [E]       [E]
+                    h[:,n]  = A_bar * h[:,n]   + B_bar  *  x[b,l]
+
+                #### Compute output float y ####
+                y_l = torch.zeros([E], device=self.cfg.device)
+                for n in range(N):
+                    # [1]               [E]         dot   [E]
+                    C        = self.W_C.weight[n,:].dot(x[b,l]) # no bias
+                    # [E]      [1]   [E]
+                    y_l      += C * h[:,n]
+            
                 ys_b.append([y.float() for y in y_l.flatten()])
             ys.append(ys_b)
         # [B,L,E]
@@ -1271,7 +1363,7 @@ class HookedMambaBlock(nn.Module):
     
         # [B,L,D]     [B,L,D]
         resid         +=     y
-        resid         = self.hook_resid_post(resid) # [B,L,D]
+        resid         = self.hook_resid_post(resid.clone()) # [B,L,D]
         
         return resid
 
