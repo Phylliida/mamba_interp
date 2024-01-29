@@ -1165,34 +1165,35 @@ class HookedMambaBlock(nn.Module):
         Batch,L,D = resid.size()
         
         ###### Process inputs ######
-        resid     = self.hook_resid_pre(resid) # [B,L,D]
+        resid      = self.hook_resid_pre(resid) # [B,L,D]
         
         # [B,L,D]             [B,L,D]
-        x         = self.norm(  resid  )
-        x         = self.hook_normalized_input(x) # [B,L,E]
+        resid_norm = self.norm(  resid  )
+        resid_norm = self.hook_normalized_input(resid_norm) # [B,L,E]
         
-        # [B,L,E]         [D->E]  [B,L,D]
-        skip      = self.skip_proj(  x  ) # no bias
-        skip      = self.hook_skip_proj(skip) # [B,L,E]
+        # [B,L,E]          [D->E]  [B,L,D]
+        skip       = self.skip_proj(  x  ) # no bias
+        skip       = self.hook_skip_proj(skip) # [B,L,E]
         
-        # [B,L,E]         [D->E] [B,L,D]
-        x         = self.in_proj(  x  ) # no bias
-        x         = self.hook_in_proj(x) # [B,L,E]
+        # [B,L,E]          [D->E]   [B,L,D]
+        x_in       = self.in_proj( resid_norm ) # no bias
+        x_in       = self.hook_in_proj(x_in) # [B,L,E]
         
         ###### Conv ######
         # [B,E,L]
-        x         = rearrange(x, 'B L E -> B E L')
-        # [B E L]                [B,E,L]  conv1d outputs [B,E,3+L], cut off last 3
-        x         = self.conv1d(   x   )
+        x_conv     = rearrange(x_in, 'B L E -> B E L')
+        # [B,E,L+3]                 [B,E,L]  conv1d outputs [B,E,3+L], cut off last 3
+        x_conv_out = self.conv1d(   x_conv   )
+        # [B,L+3,E]            [B,E,L+3]
+        x_conv_out = rearrange(x_conv_out, 'B E L -> B L E')
+        x_conv_out = self.hook_conv(x_conv_out) # [B,L+3,E] 
         # [B,L,E]
-        x         = rearrange(x, 'B E L -> B L E')
-        x = self.hook_conv(x) # [B,L+3,E]
-        x = x[:,:L,:]
-        x = self.hook_conv_after_cutoff(x) # [B,L,E]
+        x_conv_out_cutoff = x_conv_out[:,:L,:]
+        x_conv_out_cutoff = self.hook_conv_after_cutoff(x) # [B,L,E]
 
         ###### Nonlinearity  ######
-        # [B,L,E]          [B,L,E]
-        x         = F.silu(  x   )
+        # [B,L,E]               [B,L,E]
+        x         = F.silu( x_conv_out_cutoff )
         x         = self.hook_ssm_input(x) # [B,L,E]
         
         ###### SSM ######
@@ -1313,7 +1314,7 @@ class HookedMambaBlock(nn.Module):
         # this just applies E->N projection to each E-sized vector
         # [B,L,N]      [E->N]  [B,L,E]     
         C           = self.W_C(   x   ) # no bias
-        C           = self.hook_C(C) # [B,L,E,N]
+        C           = self.hook_C(C) # [B,L,N]
         
         # Now we do the recurrence
         ys = []
@@ -1331,8 +1332,8 @@ class HookedMambaBlock(nn.Module):
                     return value
             
             # [B,E,N]   [B,E,N]     [B,E,N]          [B,E,N]          [B,E]
-            h         =    h    *  A_bar[:,l,:,:]  + B_bar[:,l,:,:] * x[:,l].view(Batch, E, 1)
-            h        = apply_hook(self.hook_h, h) # [B,E,N]
+            h        =    h    *  A_bar[:,l,:,:]  + B_bar[:,l,:,:] * x[:,l].view(Batch, E, 1)
+            h        = apply_hook(self.hook_h, h.clone()) # [B,E,N]
             
             # [B,E]    [B,E,N]       [B,N,1]   # this is like [E,N] x [N,1] for each batch
             y_l       =   h     @   C[:,l,:].view(Batch,N,1)
@@ -1350,22 +1351,22 @@ class HookedMambaBlock(nn.Module):
         ###### Finish block ######
         
         # [B,L,E]  [B,L,E]    [B,L,E]       [E]
-        y         =   y      +   x     *  self.W_D
-        y         =  self.hook_after_d(y) # [B,L,E]
+        y_apply_D =   y      +   x     *  self.W_D
+        y_apply_D =  self.hook_after_d(y_apply_D) # [B,L,E]
         
-        # [B,L,E]  [B,L,E]          [B,L,E]
-        y         =   y      * F.silu(  skip  )
-        y         =  self.hook_after_skip(y) # [B,L,E]
+        # [B,L,E]   [B,L,E]             [B,L,E]
+        y_skip    = y_apply_D * F.silu(  skip  )
+        y_skip    =  self.hook_after_skip(y_skip) # [B,L,E]
         
-        # [B,L,D]         [E->D]  [B,L,E]
-        y         = self.out_proj(   y   ) # no bias
-        y         = self.hook_out_proj(y) # [B,L,D]
+        # [B,L,D]         [E->D]   [B,L,E]
+        y_out     = self.out_proj( y_skip ) # no bias
+        y_out     = self.hook_out_proj(y_out) # [B,L,D]
     
-        # [B,L,D]     [B,L,D]
-        resid         +=     y
-        resid         = self.hook_resid_post(resid.clone()) # [B,L,D]
+        # [B,L,D]      [B,L,D]   [B,L,D]
+        resid_out     = resid  +  y
+        resid_out     = self.hook_resid_post(resid_out) # [B,L,D]
         
-        return resid
+        return resid_out
 
 
 
