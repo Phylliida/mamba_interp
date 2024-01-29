@@ -1171,8 +1171,8 @@ class HookedMambaBlock(nn.Module):
         resid_norm = self.norm(  resid  )
         resid_norm = self.hook_normalized_input(resid_norm) # [B,L,E]
         
-        # [B,L,E]          [D->E]  [B,L,D]
-        skip       = self.skip_proj(  x  ) # no bias
+        # [B,L,E]          [D->E]     [B,L,D]
+        skip       = self.skip_proj( resid_norm ) # no bias
         skip       = self.hook_skip_proj(skip) # [B,L,E]
         
         # [B,L,E]          [D->E]   [B,L,D]
@@ -1189,7 +1189,7 @@ class HookedMambaBlock(nn.Module):
         x_conv_out = self.hook_conv(x_conv_out) # [B,L+3,E] 
         # [B,L,E]
         x_conv_out_cutoff = x_conv_out[:,:L,:]
-        x_conv_out_cutoff = self.hook_conv_after_cutoff(x) # [B,L,E]
+        x_conv_out_cutoff = self.hook_conv_after_cutoff(x_conv_out_cutoff) # [B,L,E]
 
         ###### Nonlinearity  ######
         # [B,L,E]               [B,L,E]
@@ -1363,7 +1363,7 @@ class HookedMambaBlock(nn.Module):
         y_out     = self.hook_out_proj(y_out) # [B,L,D]
     
         # [B,L,D]      [B,L,D]   [B,L,D]
-        resid_out     = resid  +  y
+        resid_out     = resid  +  y_out
         resid_out     = self.hook_resid_post(resid_out) # [B,L,D]
         
         return resid_out
