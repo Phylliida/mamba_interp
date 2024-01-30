@@ -1026,21 +1026,21 @@ class HookedMamba(InputDependentHookedRootModule):
 
         if given_tokens:
             # [B,L,D]                         [B,L]
-            resid         = self.embedding(input)
+            input_embed         = self.embedding(input)
         else: #[B,L,D]      [B,L,D]
-            resid         = input
-        resid         = self.hook_embed(resid)
+            input_embed         = input
+        resid         = self.hook_embed(input_embed)
         
         for layer in self.blocks:
             # [B,L,D]         [B,L,D]
             resid     = layer(resid)
          
-        # [B,L,D]              [B,L,D]
-        resid     = self.norm( resid )
-        resid     = self.hook_norm(resid) # [B,L,D]
+        # [B,L,D]                   [B,L,D]
+        resid_normed     = self.norm( resid )
+        resid_normed     = self.hook_norm(resid_normed) # [B,L,D]
         
-        # [B,L,V]          [D->V] [B,L,D]
-        logits    = self.lm_head( resid ) # no bias
+        # [B,L,V]          [D->V]    [B,L,D]
+        logits    = self.lm_head( resid_normed ) # no bias
         logits    = self.hook_logits(logits) # [B,L,V]
         
         if return_type is None:
