@@ -445,16 +445,44 @@ class Timer():
     def __exit__(self, exc_type, exc_val, exc_tb):
         print("elapsed", self.label, current_milli_time() - self.start_time)
 
-class InputDependentHookPoint(HookPoint):
+# This lets us do in place operations and not have to worry about
+# the cached stuff getting overwritten
+class CloningHookPoint(HookPoint):
+    def __init__(self):
+        super().__init__()
+
+    def has_hooks(self):
+        return len(self.fwd_hooks) > 0 or len(self.bwd_hooks) > 0
+
+    def forward(self, x):
+        if self.has_hooks():
+            return super().forward(x.clone())
+        else:
+            return x
+
+class InputDependentCloningHookPoint(CloningHookPoint):
     def __init__(self, input_dependent_postfixes_func):
         super().__init__()
         self.hooks = {}
         self.input_dependent_postfixes_func = input_dependent_postfixes_func
     
+    def has_hooks(self):
+        print("checking child hooks")
+        for hook_name, hook in self.hooks.items():
+            if hook.has_hooks():
+                return True
+        return False
+
+    def forward(self, x):
+        if self.has_hooks():
+            return super().forward(x.clone())
+        else:
+            return x
+
     def add_input_dependent_hooks(self, input):
         for postfix in self.input_dependent_postfixes_func(input=input):
             if not postfix in self.hooks:
-                postfix_hook = HookPoint()
+                postfix_hook = CloningHookPoint()
                 postfix_hook.name = self.name + postfix
                 self.hooks[postfix] = postfix_hook
                 yield self.hooks[postfix].name, self.hooks[postfix]
@@ -541,7 +569,7 @@ class InputDependentHookedRootModule(HookedTransformer):
         for name, module in self.named_modules():
             if name == "":
                 continue
-            if "InputDependentHookPoint" in str(type(module)):
+            if "InputDependentCloningHookPoint" in str(type(module)):
                 yield name, module
                     
     def setup_input_dependent_hooks(self, fwd_hooks, bwd_hooks, model_args, model_kwargs):
@@ -783,16 +811,16 @@ class HookedMambaBlockBatchSplit(nn.Module):
         self.A_log     = nn.Parameter(torch.log(torch.randn([E,N])))
         
         
-        self.hook_x_l = InputDependentHookPoint(input_dependent_postfixes_batch_split)   # [E], with b and l param
-        self.hook_delta_1 = InputDependentHookPoint(input_dependent_postfixes_batch_split) # [D_delta], with b and l param
-        self.hook_delta_2 = InputDependentHookPoint(input_dependent_postfixes_batch_split) # [E], with b and l param
-        self.hook_delta = InputDependentHookPoint(input_dependent_postfixes_batch_split) # [E], with b and l param
-        self.hook_A_bar = InputDependentHookPoint(input_dependent_postfixes_batch_split) # [E,N], with b and l param
-        self.hook_B = InputDependentHookPoint(input_dependent_postfixes_batch_split)     # [N], with b and l param
-        self.hook_B_bar = InputDependentHookPoint(input_dependent_postfixes_batch_split) # [E,N], with b and l param
-        self.hook_h = InputDependentHookPoint(input_dependent_postfixes_batch_split)     # [E,N], with b and l param
-        self.hook_C = InputDependentHookPoint(input_dependent_postfixes_batch_split)     # [N], with b and l param
-        self.hook_y_l = InputDependentHookPoint(input_dependent_postfixes_batch_split)   # [E], with b and l param
+        self.hook_x_l = InputDependentCloningHookPoint(input_dependent_postfixes_batch_split)   # [E], with b and l param
+        self.hook_delta_1 = InputDependentCloningHookPoint(input_dependent_postfixes_batch_split) # [D_delta], with b and l param
+        self.hook_delta_2 = InputDependentCloningHookPoint(input_dependent_postfixes_batch_split) # [E], with b and l param
+        self.hook_delta = InputDependentCloningHookPoint(input_dependent_postfixes_batch_split) # [E], with b and l param
+        self.hook_A_bar = InputDependentCloningHookPoint(input_dependent_postfixes_batch_split) # [E,N], with b and l param
+        self.hook_B = InputDependentCloningHookPoint(input_dependent_postfixes_batch_split)     # [N], with b and l param
+        self.hook_B_bar = InputDependentCloningHookPoint(input_dependent_postfixes_batch_split) # [E,N], with b and l param
+        self.hook_h = InputDependentCloningHookPoint(input_dependent_postfixes_batch_split)     # [E,N], with b and l param
+        self.hook_C = InputDependentCloningHookPoint(input_dependent_postfixes_batch_split)     # [N], with b and l param
+        self.hook_y_l = InputDependentCloningHookPoint(input_dependent_postfixes_batch_split)   # [E], with b and l param
         
         self.hook_ssm_output = HookPoint() # [B,L,E]
 
@@ -969,13 +997,13 @@ class HookedMamba(InputDependentHookedRootModule):
         V = cfg.vocab_size
         
         self.embedding = nn.Embedding(V, D)
-        self.hook_embed = HookPoint()
+        self.hook_embed = CloningHookPoint()
         
         self.blocks = nn.ModuleList([HookedMambaBlock(cfg=cfg) for _ in range(cfg.n_layers)])
         self.norm = RMSNorm(D)
-        self.hook_norm = HookPoint() # [B,L,D]
+        self.hook_norm = CloningHookPoint() # [B,L,D]
         self.lm_head  = nn.Linear(D, V, bias=False)
-        self.hook_logits = HookPoint() # [B,L,V]
+        self.hook_logits = CloningHookPoint() # [B,L,V]
         
         self.tokenizer = AutoTokenizer.from_pretrained(MODEL_TOKENIZER)
         self.tokenizer.pad_token = self.tokenizer.eos_token
@@ -1025,22 +1053,22 @@ class HookedMamba(InputDependentHookedRootModule):
         Batch,L = input.size()
 
         if given_tokens:
-            # [B,L,D]                         [B,L]
-            input_embed         = self.embedding(input)
-        else: #[B,L,D]      [B,L,D]
-            input_embed         = input
-        resid         = self.hook_embed(input_embed)
+            # [B,L,D]                      [B,L]
+            resid         = self.embedding(input)
+        else: #[B,L,D]     [B,L,D]
+            resid         = input
+        resid         = self.hook_embed(resid)
         
         for layer in self.blocks:
-            # [B,L,D]         [B,L,D]
+            # [B,L,D]        [B,L,D]
             resid     = layer(resid)
          
-        # [B,L,D]                   [B,L,D]
-        resid_normed     = self.norm( resid )
-        resid_normed     = self.hook_norm(resid_normed) # [B,L,D]
+        # [B,L,D]             [B,L,D]
+        resid     = self.norm( resid )
+        resid     = self.hook_norm(resid) # [B,L,D]
         
         # [B,L,V]          [D->V]    [B,L,D]
-        logits    = self.lm_head( resid_normed ) # no bias
+        logits    = self.lm_head( resid ) # no bias
         logits    = self.hook_logits(logits) # [B,L,V]
         
         if return_type is None:
@@ -1084,16 +1112,16 @@ class HookedMambaBlock(nn.Module):
         V = cfg.vocab_size
         
         
-        self.hook_resid_pre = HookPoint() # [B,L,D]
+        self.hook_resid_pre = CloningHookPoint() # [B,L,D]
         
         ## Process inputs
         self.norm      = RMSNorm(D)
-        self.hook_normalized_input = HookPoint() # [B,L,D]
+        self.hook_normalized_input = CloningHookPoint() # [B,L,D]
         
         self.skip_proj = nn.Linear(D, E, bias=False)
-        self.hook_skip_proj = HookPoint() # [B,L,E]
+        self.hook_skip_proj = CloningHookPoint() # [B,L,E]
         self.in_proj   = nn.Linear(D, E, bias=False)
-        self.hook_in_proj = HookPoint() # [B,L,E]
+        self.hook_in_proj = CloningHookPoint() # [B,L,E]
         
         ## Conv
         self.conv1d    = nn.Conv1d(
@@ -1104,9 +1132,9 @@ class HookedMambaBlock(nn.Module):
             groups=E,
             padding=D_conv - 1,
         )
-        self.hook_conv = HookPoint()  # [B,L+D_conv-1,E]
-        self.hook_conv_after_cutoff = HookPoint() # [B,L,E]
-        self.hook_ssm_input = HookPoint() # [B,L,E]
+        self.hook_conv = CloningHookPoint()  # [B,L+D_conv-1,E]
+        self.hook_conv_after_cutoff = CloningHookPoint() # [B,L,E]
+        self.hook_ssm_input = CloningHookPoint() # [B,L,E]
         
         ## SSM Params
         self.W_delta_1 = nn.Linear(E, D_delta, bias=False)
@@ -1117,37 +1145,37 @@ class HookedMambaBlock(nn.Module):
         self.A_log     = nn.Parameter(torch.log(torch.randn([E,N])))
         
         
-        self.hook_h_start = HookPoint()     # [B,E,N]
+        self.hook_h_start = CloningHookPoint()     # [B,E,N]
         
-        self.hook_delta_1 = HookPoint() # [B,L,D_delta]
-        self.hook_delta_2 = HookPoint() # [B,L,E]
-        self.hook_delta = HookPoint() # [B,L,E]
+        self.hook_delta_1 = CloningHookPoint() # [B,L,D_delta]
+        self.hook_delta_2 = CloningHookPoint() # [B,L,E]
+        self.hook_delta = CloningHookPoint() # [B,L,E]
         
-        self.hook_A_bar = HookPoint() # [B,L,E,N]
-        self.hook_B = HookPoint()     # [B,L,N]
-        self.hook_B_bar = HookPoint() # [B,L,E,N]
+        self.hook_A_bar = CloningHookPoint() # [B,L,E,N]
+        self.hook_B = CloningHookPoint()     # [B,L,N]
+        self.hook_B_bar = CloningHookPoint() # [B,L,E,N]
         
-        self.hook_C = HookPoint()     # [B,L,N]
+        self.hook_C = CloningHookPoint()     # [B,L,N]
         
-        self.hook_h = InputDependentHookPoint(input_dependent_postfixes)     # [B,E,N], with l param
-        self.hook_y_l = InputDependentHookPoint(input_dependent_postfixes)   # [B,E], with l param
+        self.hook_h = InputDependentCloningHookPoint(input_dependent_postfixes)     # [B,E,N], with l param
+        self.hook_y_l = InputDependentCloningHookPoint(input_dependent_postfixes)   # [B,E], with l param
         
-        self.hook_ssm_output = HookPoint() # [B,L,E]
+        self.hook_ssm_output = CloningHookPoint() # [B,L,E]
 
         self.W_D = nn.Parameter(torch.ones(E))
-        self.hook_after_d = HookPoint() # [B,L,E]
+        self.hook_after_d = CloningHookPoint() # [B,L,E]
         
-        self.hook_after_skip = HookPoint() # [B,L,E]
+        self.hook_after_skip = CloningHookPoint() # [B,L,E]
         
         
         ## Project back out
         self.out_proj  = nn.Linear(E, D, bias=False)
-        self.hook_out_proj = HookPoint() # [B,L,D]
-        self.hook_resid_post = HookPoint() # [B,L,D]
+        self.hook_out_proj = CloningHookPoint() # [B,L,D]
+        self.hook_resid_post = CloningHookPoint() # [B,L,D]
         
     def has_hooks_in_inner_loop(self):
         for name, module in self.named_modules():
-            if "InputDependentHookPoint" in str(type(module)):
+            if "InputDependentCloningHookPoint" in str(type(module)):
                 if len(module.fwd_hooks) > 0 or len(module.bwd_hooks) > 0:
                     return True
         return False
@@ -1167,33 +1195,33 @@ class HookedMambaBlock(nn.Module):
         ###### Process inputs ######
         resid      = self.hook_resid_pre(resid) # [B,L,D]
         
-        # [B,L,D]             [B,L,D]
-        resid_norm = self.norm(  resid  )
-        resid_norm = self.hook_normalized_input(resid_norm) # [B,L,E]
+        # [B,L,D]          [B,L,D]
+        resid = self.norm(  resid  )
+        resid = self.hook_normalized_input(resid) # [B,L,E]
         
         # [B,L,E]          [D->E]     [B,L,D]
-        skip       = self.skip_proj( resid_norm ) # no bias
+        skip       = self.skip_proj( resid ) # no bias
         skip       = self.hook_skip_proj(skip) # [B,L,E]
         
-        # [B,L,E]          [D->E]   [B,L,D]
-        x_in       = self.in_proj( resid_norm ) # no bias
-        x_in       = self.hook_in_proj(x_in) # [B,L,E]
+        # [B,L,E]     [D->E]   [B,L,D]
+        x       = self.in_proj( resid ) # no bias
+        x       = self.hook_in_proj(x) # [B,L,E]
         
         ###### Conv ######
         # [B,E,L]
-        x_conv     = rearrange(x_in, 'B L E -> B E L')
+        x          = rearrange(x, 'B L E -> B E L')
         # [B,E,L+3]                 [B,E,L]  conv1d outputs [B,E,3+L], cut off last 3
-        x_conv_out = self.conv1d(   x_conv   )
+        x          = self.conv1d(   x   )
         # [B,L+3,E]            [B,E,L+3]
-        x_conv_out = rearrange(x_conv_out, 'B E L -> B L E')
-        x_conv_out = self.hook_conv(x_conv_out) # [B,L+3,E] 
+        x          = rearrange(x, 'B E L -> B L E')
+        x          = self.hook_conv(x) # [B,L+3,E] 
         # [B,L,E]
-        x_conv_out_cutoff = x_conv_out[:,:L,:]
-        x_conv_out_cutoff = self.hook_conv_after_cutoff(x_conv_out_cutoff) # [B,L,E]
+        x          = x[:,:L,:]
+        x          = self.hook_conv_after_cutoff(x) # [B,L,E]
 
         ###### Nonlinearity  ######
         # [B,L,E]               [B,L,E]
-        x         = F.silu( x_conv_out_cutoff )
+        x         = F.silu( x )
         x         = self.hook_ssm_input(x) # [B,L,E]
         
         ###### SSM ######
@@ -1318,7 +1346,7 @@ class HookedMambaBlock(nn.Module):
         
         # Now we do the recurrence
         ys = []
-        
+
         h = torch.zeros([Batch,E,N], device=self.cfg.device)
         for l in range(L):
             
@@ -1334,7 +1362,7 @@ class HookedMambaBlock(nn.Module):
             # [B,E,N]   [B,E,N]     [B,E,N]          [B,E,N]          [B,E]
             h        =    h    *  A_bar[:,l,:,:]  + B_bar[:,l,:,:] * x[:,l].view(Batch, E, 1)
             h        = apply_hook(self.hook_h, h.clone()) # [B,E,N]
-            
+
             # [B,E]    [B,E,N]       [B,N,1]   # this is like [E,N] x [N,1] for each batch
             y_l       =   h     @   C[:,l,:].view(Batch,N,1)
             # [B,E]              [B,E,1]
@@ -1351,22 +1379,22 @@ class HookedMambaBlock(nn.Module):
         ###### Finish block ######
         
         # [B,L,E]  [B,L,E]    [B,L,E]       [E]
-        y_apply_D =   y      +   x     *  self.W_D
-        y_apply_D =  self.hook_after_d(y_apply_D) # [B,L,E]
+        y         =   y      +   x     *  self.W_D
+        y         =  self.hook_after_d(y) # [B,L,E]
         
         # [B,L,E]   [B,L,E]             [B,L,E]
-        y_skip    = y_apply_D * F.silu(  skip  )
-        y_skip    =  self.hook_after_skip(y_skip) # [B,L,E]
+        y         =  y      *   F.silu(  skip  )
+        y         =  self.hook_after_skip(y) # [B,L,E]
         
         # [B,L,D]         [E->D]   [B,L,E]
-        y_out     = self.out_proj( y_skip ) # no bias
-        y_out     = self.hook_out_proj(y_out) # [B,L,D]
+        y         = self.out_proj(    y   ) # no bias
+        y         = self.hook_out_proj(y) # [B,L,D]
     
-        # [B,L,D]      [B,L,D]   [B,L,D]
-        resid_out     = resid  +  y_out
-        resid_out     = self.hook_resid_post(resid_out) # [B,L,D]
+        # [B,L,D]      [B,L,D] 
+        resid     += y
+        resid     = self.hook_resid_post(resid) # [B,L,D]
         
-        return resid_out
+        return resid
 
 
 
