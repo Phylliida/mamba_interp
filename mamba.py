@@ -466,19 +466,6 @@ class InputDependentCloningHookPoint(CloningHookPoint):
         self.hooks = {}
         self.input_dependent_postfixes_func = input_dependent_postfixes_func
     
-    def has_hooks(self):
-        print("checking child hooks")
-        for hook_name, hook in self.hooks.items():
-            if hook.has_hooks():
-                return True
-        return False
-
-    def forward(self, x):
-        if self.has_hooks():
-            return super().forward(x.clone())
-        else:
-            return x
-
     def add_input_dependent_hooks(self, input):
         for postfix in self.input_dependent_postfixes_func(input=input):
             if not postfix in self.hooks:
@@ -1361,7 +1348,7 @@ class HookedMambaBlock(nn.Module):
             
             # [B,E,N]   [B,E,N]     [B,E,N]          [B,E,N]          [B,E]
             h        =    h    *  A_bar[:,l,:,:]  + B_bar[:,l,:,:] * x[:,l].view(Batch, E, 1)
-            h        = apply_hook(self.hook_h, h.clone()) # [B,E,N]
+            h        = apply_hook(self.hook_h, h) # [B,E,N]
 
             # [B,E]    [B,E,N]       [B,N,1]   # this is like [E,N] x [N,1] for each batch
             y_l       =   h     @   C[:,l,:].view(Batch,N,1)
