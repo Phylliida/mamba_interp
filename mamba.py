@@ -456,7 +456,9 @@ class CloningHookPoint(HookPoint):
 
     def forward(self, x):
         if self.has_hooks():
-            return super().forward(x.clone().detach())
+            print("hooks", self.name)
+            out = super().forward(x.clone())
+            return out.clone()
         else:
             return x
 
@@ -1183,8 +1185,8 @@ class HookedMambaBlock(nn.Module):
         Batch,L,D = resid.size()
         
         ###### Process inputs ######
-        resid      = self.hook_resid_pre(resid) # [B,L,D]
-        
+        resid      = self.hook_resid_pre(resid.clone()) # [B,L,D]
+
         # [B,L,D]             [B,L,D]
         x          = self.norm(  resid  )
         x          = self.hook_normalized_input(x) # [B,L,E]
@@ -1382,7 +1384,6 @@ class HookedMambaBlock(nn.Module):
         y          = self.hook_out_proj(y) # [B,L,D]
     
         # [B,L,D]      [B,L,D] 
-        resid       = resid.clone()
         resid       += y
         resid       = self.hook_resid_post(resid) # [B,L,D]
         
