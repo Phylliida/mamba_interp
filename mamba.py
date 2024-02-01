@@ -1044,18 +1044,18 @@ class HookedMamba(InputDependentHookedRootModule):
             resid         = self.embedding(input)
         else: #[B,L,D]     [B,L,D]
             resid         = input
-        resid         = self.hook_embed(resid)
+        resid_f         = self.hook_embed(resid)
         
         for layer in self.blocks:
             # [B,L,D]        [B,L,D]
-            resid     = layer(resid)
+            resid_f     = layer(resid_f)
          
         # [B,L,D]             [B,L,D]
-        resid     = self.norm( resid )
-        resid     = self.hook_norm(resid) # [B,L,D]
+        residg     = self.norm( resid_f )
+        residg     = self.hook_norm(residg) # [B,L,D]
         
         # [B,L,V]          [D->V]    [B,L,D]
-        logits    = self.lm_head( resid ) # no bias
+        logits    = self.lm_head( residg ) # no bias
         logits    = self.hook_logits(logits) # [B,L,V]
         
         if return_type is None:
@@ -1180,35 +1180,35 @@ class HookedMambaBlock(nn.Module):
         Batch,L,D = resid.size()
         
         ###### Process inputs ######
-        resid      = self.hook_resid_pre(resid) # [B,L,D]
+        residin  = self.hook_resid_pre(resid) # [B,L,D]
         
         # [B,L,D]          [B,L,D]
-        resid = self.norm(  resid  )
-        resid = self.hook_normalized_input(resid) # [B,L,E]
+        residnn = self.norm(  residin  )
+        residnn = self.hook_normalized_input(residnn) # [B,L,E]
         
         # [B,L,E]          [D->E]     [B,L,D]
-        skip       = self.skip_proj( resid ) # no bias
+        skip       = self.skip_proj( residnn ) # no bias
         skip       = self.hook_skip_proj(skip) # [B,L,E]
         
         # [B,L,E]     [D->E]   [B,L,D]
-        x       = self.in_proj( resid ) # no bias
-        x       = self.hook_in_proj(x) # [B,L,E]
+        xf       = self.in_proj( residnn ) # no bias
+        xf       = self.hook_in_proj(xf) # [B,L,E]
         
         ###### Conv ######
         # [B,E,L]
-        x          = rearrange(x, 'B L E -> B E L')
+        xa          = rearrange(xf, 'B L E -> B E L')
         # [B,E,L+3]                 [B,E,L]  conv1d outputs [B,E,3+L], cut off last 3
-        x          = self.conv1d(   x   )
+        xb          = self.conv1d(   xa   )
         # [B,L+3,E]            [B,E,L+3]
-        x          = rearrange(x, 'B E L -> B L E')
-        x          = self.hook_conv(x) # [B,L+3,E] 
+        xc          = rearrange(xb, 'B E L -> B L E')
+        xc          = self.hook_conv(xc) # [B,L+3,E] 
         # [B,L,E]
-        x          = x[:,:L,:]
-        x          = self.hook_conv_after_cutoff(x) # [B,L,E]
+        xd          = xc[:,:L,:]
+        xd          = self.hook_conv_after_cutoff(xd) # [B,L,E]
 
         ###### Nonlinearity  ######
         # [B,L,E]               [B,L,E]
-        x         = F.silu( x )
+        x         = F.silu( xd )
         x         = self.hook_ssm_input(x) # [B,L,E]
         
         ###### SSM ######
@@ -1365,23 +1365,23 @@ class HookedMambaBlock(nn.Module):
         
         ###### Finish block ######
         
-        # [B,L,E]  [B,L,E]    [B,L,E]       [E]
-        y         =   y      +   x     *  self.W_D
-        y         =  self.hook_after_d(y) # [B,L,E]
+        # [B,L,E]  [B,L,E]       [E]
+        ya        = y +  x     *  self.W_D
+        ya         =  self.hook_after_d(ya) # [B,L,E]
         
-        # [B,L,E]   [B,L,E]             [B,L,E]
-        y         =  y      *   F.silu(  skip  )
-        y         =  self.hook_after_skip(y) # [B,L,E]
+        # [B,L,E]            [B,L,E]
+        yb        = ya + F.silu(  skip  )
+        yb        =  self.hook_after_skip(yb) # [B,L,E]
         
         # [B,L,D]         [E->D]   [B,L,E]
-        y         = self.out_proj(    y   ) # no bias
-        y         = self.hook_out_proj(y) # [B,L,D]
+        yc         = self.out_proj(    yb   ) # no bias
+        yc         = self.hook_out_proj(yc) # [B,L,D]
     
         # [B,L,D]      [B,L,D] 
-        resid     += y
-        resid     = self.hook_resid_post(resid) # [B,L,D]
+        resido      = resid + yc
+        resido     = self.hook_resid_post(resido) # [B,L,D]
         
-        return resid
+        return resido
 
 
 
