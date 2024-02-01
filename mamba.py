@@ -7,6 +7,7 @@ import torch.nn.functional as F
 from einops import rearrange, repeat, einsum
 from typing import Dict, List, NamedTuple, Optional, Tuple, Union, overload
 from jaxtyping import Float, Int
+from contextlib import contextmanager
 
 import time
 import logging
@@ -445,24 +446,7 @@ class Timer():
     def __exit__(self, exc_type, exc_val, exc_tb):
         print("elapsed", self.label, current_milli_time() - self.start_time)
 
-# This lets us do in place operations and not have to worry about
-# the cached stuff getting overwritten
-class CloningHookPoint(HookPoint):
-    def __init__(self):
-        super().__init__()
-
-    def has_hooks(self):
-        return len(self.fwd_hooks) > 0 or len(self.bwd_hooks) > 0
-
-    def forward(self, x):
-        if self.has_hooks():
-            print("hooks", self.name)
-            out = super().forward(x.clone())
-            return out.clone()
-        else:
-            return x
-
-class InputDependentCloningHookPoint(CloningHookPoint):
+class InputDependentHookPoint(HookPoint):
     def __init__(self, input_dependent_postfixes_func):
         super().__init__()
         self.hooks = {}
@@ -471,7 +455,7 @@ class InputDependentCloningHookPoint(CloningHookPoint):
     def add_input_dependent_hooks(self, input):
         for postfix in self.input_dependent_postfixes_func(input=input):
             if not postfix in self.hooks:
-                postfix_hook = CloningHookPoint()
+                postfix_hook = HookPoint()
                 postfix_hook.name = self.name + postfix
                 self.hooks[postfix] = postfix_hook
                 yield self.hooks[postfix].name, self.hooks[postfix]
@@ -492,6 +476,15 @@ class InputDependentHookedRootModule(HookedTransformer):
         
         self.did_setup_input_dependent_hooks = False
     
+
+    def get_all_hooks(self, *model_args, **model_kwargs):
+        # fwd_hooks=None expands all input_dependent hooks
+        # we need this context to get the input dependent hooks
+        with self.input_dependent_hooks_context(fwd_hooks=None, bwd_hooks=None, model_args=model_args, model_kwargs=model_kwargs):
+            for name, hp in self.hook_dict.items():
+                yield name, hp
+
+
     def hook_points(self):
         if self.did_setup_input_dependent_hooks:
             return super().hook_points()
@@ -509,17 +502,16 @@ class InputDependentHookedRootModule(HookedTransformer):
             clear_contexts=False,
             **model_kwargs,
         ):
-                self.setup_input_dependent_hooks(fwd_hooks=fwd_hooks, bwd_hooks=bwd_hooks, model_args=model_args, model_kwargs=model_kwargs)
-                res = super().run_with_hooks(
-                   *model_args,
-                    fwd_hooks=fwd_hooks,
-                    bwd_hooks=bwd_hooks,
-                    reset_hooks_end=reset_hooks_end,
-                    clear_contexts=clear_contexts,
-                    **model_kwargs
-                )
-                self.done_input_dependent_hooks()
-                return res
+                with self.input_dependent_hooks_context(fwd_hooks=fwd_hooks, bwd_hooks=bwd_hooks, model_args=model_args, model_kwargs=model_kwargs):
+                    res = super().run_with_hooks(
+                        *model_args,
+                        fwd_hooks=fwd_hooks,
+                        bwd_hooks=bwd_hooks,
+                        reset_hooks_end=reset_hooks_end,
+                        clear_contexts=clear_contexts,
+                        **model_kwargs
+                    )
+                    return res
     
     def run_with_cache(
             self,
@@ -541,26 +533,33 @@ class InputDependentHookedRootModule(HookedTransformer):
             if 'bwd_hooks' in model_kwargs:
                 bwd_hooks = model_kwargs['bwd_hooks']
                 del model_kwargs['bwd_hooks']
-            self.setup_input_dependent_hooks(fwd_hooks=fwd_hooks, bwd_hooks=bwd_hooks, model_args=model_args, model_kwargs=model_kwargs)
-            res = super().run_with_cache(
-                *model_args,
-                names_filter=names_filter,
-                device=device,
-                remove_batch_dim=remove_batch_dim,
-                incl_bwd=incl_bwd,
-                reset_hooks_end=reset_hooks_end,
-                clear_contexts=clear_contexts,
-                **model_kwargs)
-            self.done_input_dependent_hooks()
-            return res
+            with self.input_dependent_hooks_context(fwd_hooks=fwd_hooks, bwd_hooks=bwd_hooks, model_args=model_args, model_kwargs=model_kwargs):
+                res = super().run_with_cache(
+                    *model_args,
+                    names_filter=names_filter,
+                    device=device,
+                    remove_batch_dim=remove_batch_dim,
+                    incl_bwd=incl_bwd,
+                    reset_hooks_end=reset_hooks_end,
+                    clear_contexts=clear_contexts,
+                    **model_kwargs)
+                return res
         
     def input_dependent_hooks(self):
         for name, module in self.named_modules():
             if name == "":
                 continue
-            if "InputDependentCloningHookPoint" in str(type(module)):
+            if "InputDependentHookPoint" in str(type(module)):
                 yield name, module
-                    
+    
+    @contextmanager
+    def input_dependent_hooks_context(self, fwd_hooks, bwd_hooks, model_args, model_kwargs):
+        try:
+            self.setup_input_dependent_hooks(fwd_hooks=fwd_hooks, bwd_hooks=bwd_hooks, model_args=model_args, model_kwargs=model_kwargs)
+            yield self
+        finally:
+            self.done_input_dependent_hooks()
+
     def setup_input_dependent_hooks(self, fwd_hooks, bwd_hooks, model_args, model_kwargs):
         if 'input' in model_kwargs:
             input = model_kwargs['input']
@@ -568,6 +567,8 @@ class InputDependentHookedRootModule(HookedTransformer):
             input = model_args[0]
         else:
             raise Exception(f"Could not find input in args {model_args} and kwargs {model_kwargs}")
+        
+        
         # make sure input is ids and not a str
         input = tokenize_if_str(tokenizer=self.tokenizer, input=input)
         input_dependent_lookup = {}
@@ -620,6 +621,7 @@ class InputDependentHookedRootModule(HookedTransformer):
                 if input_dependent_hook_name in self.hook_dict:
                     del self.hook_dict[input_dependent_hook_name]
             hook.hooks = {}
+
         
 
 def tokenize_if_str(tokenizer, input):
@@ -800,16 +802,16 @@ class HookedMambaBlockBatchSplit(nn.Module):
         self.A_log     = nn.Parameter(torch.log(torch.randn([E,N])))
         
         
-        self.hook_x_l = InputDependentCloningHookPoint(input_dependent_postfixes_batch_split)   # [E], with b and l param
-        self.hook_delta_1 = InputDependentCloningHookPoint(input_dependent_postfixes_batch_split) # [D_delta], with b and l param
-        self.hook_delta_2 = InputDependentCloningHookPoint(input_dependent_postfixes_batch_split) # [E], with b and l param
-        self.hook_delta = InputDependentCloningHookPoint(input_dependent_postfixes_batch_split) # [E], with b and l param
-        self.hook_A_bar = InputDependentCloningHookPoint(input_dependent_postfixes_batch_split) # [E,N], with b and l param
-        self.hook_B = InputDependentCloningHookPoint(input_dependent_postfixes_batch_split)     # [N], with b and l param
-        self.hook_B_bar = InputDependentCloningHookPoint(input_dependent_postfixes_batch_split) # [E,N], with b and l param
-        self.hook_h = InputDependentCloningHookPoint(input_dependent_postfixes_batch_split)     # [E,N], with b and l param
-        self.hook_C = InputDependentCloningHookPoint(input_dependent_postfixes_batch_split)     # [N], with b and l param
-        self.hook_y_l = InputDependentCloningHookPoint(input_dependent_postfixes_batch_split)   # [E], with b and l param
+        self.hook_x_l = InputDependentHookPoint(input_dependent_postfixes_batch_split)   # [E], with b and l param
+        self.hook_delta_1 = InputDependentHookPoint(input_dependent_postfixes_batch_split) # [D_delta], with b and l param
+        self.hook_delta_2 = InputDependentHookPoint(input_dependent_postfixes_batch_split) # [E], with b and l param
+        self.hook_delta = InputDependentHookPoint(input_dependent_postfixes_batch_split) # [E], with b and l param
+        self.hook_A_bar = InputDependentHookPoint(input_dependent_postfixes_batch_split) # [E,N], with b and l param
+        self.hook_B = InputDependentHookPoint(input_dependent_postfixes_batch_split)     # [N], with b and l param
+        self.hook_B_bar = InputDependentHookPoint(input_dependent_postfixes_batch_split) # [E,N], with b and l param
+        self.hook_h = InputDependentHookPoint(input_dependent_postfixes_batch_split)     # [E,N], with b and l param
+        self.hook_C = InputDependentHookPoint(input_dependent_postfixes_batch_split)     # [N], with b and l param
+        self.hook_y_l = InputDependentHookPoint(input_dependent_postfixes_batch_split)   # [E], with b and l param
         
         self.hook_ssm_output = HookPoint() # [B,L,E]
 
@@ -986,13 +988,13 @@ class HookedMamba(InputDependentHookedRootModule):
         V = cfg.vocab_size
         
         self.embedding = nn.Embedding(V, D)
-        self.hook_embed = CloningHookPoint()
+        self.hook_embed = HookPoint()
         
         self.blocks = nn.ModuleList([HookedMambaBlock(cfg=cfg) for _ in range(cfg.n_layers)])
         self.norm = RMSNorm(D)
-        self.hook_norm = CloningHookPoint() # [B,L,D]
+        self.hook_norm = HookPoint() # [B,L,D]
         self.lm_head  = nn.Linear(D, V, bias=False)
-        self.hook_logits = CloningHookPoint() # [B,L,V]
+        self.hook_logits = HookPoint() # [B,L,V]
         
         self.tokenizer = AutoTokenizer.from_pretrained(MODEL_TOKENIZER)
         self.tokenizer.pad_token = self.tokenizer.eos_token
@@ -1042,25 +1044,22 @@ class HookedMamba(InputDependentHookedRootModule):
         Batch,L = input.size()
 
         if given_tokens:
-            # [B,L,D]                      [B,L]
-            resid         = self.embedding(input)
-        else: #[B,L,D]     [B,L,D]
-            resid         = input
-        resid         = self.hook_embed(resid)
-        
-        # just data they can use, each layer will reset them
-        workplace_h = torch.zeros([Batch,E,N], device=self.cfg.device)
+            # [B,L,D]                         [B,L]
+            input_embed         = self.embedding(input)
+        else: #[B,L,D]      [B,L,D]
+            input_embed         = input
+        resid         = self.hook_embed(input_embed)
         
         for layer in self.blocks:
-            # [B,L,D]        [B,L,D]
-            resid     = layer(resid, workplace_h)
+            # [B,L,D]         [B,L,D]
+            resid     = layer(resid)
          
-        # [B,L,D]              [B,L,D]
-        resid     = self.norm( resid )
-        resid     = self.hook_norm(resid) # [B,L,D]
+        # [B,L,D]                   [B,L,D]
+        resid_normed     = self.norm( resid )
+        resid_normed     = self.hook_norm(resid_normed) # [B,L,D]
         
         # [B,L,V]          [D->V]    [B,L,D]
-        logits    = self.lm_head( resid ) # no bias
+        logits    = self.lm_head( resid_normed ) # no bias
         logits    = self.hook_logits(logits) # [B,L,V]
         
         if return_type is None:
@@ -1104,16 +1103,16 @@ class HookedMambaBlock(nn.Module):
         V = cfg.vocab_size
         
         
-        self.hook_resid_pre = CloningHookPoint() # [B,L,D]
+        self.hook_resid_pre = HookPoint() # [B,L,D]
         
         ## Process inputs
         self.norm      = RMSNorm(D)
-        self.hook_normalized_input = CloningHookPoint() # [B,L,D]
+        self.hook_normalized_input = HookPoint() # [B,L,D]
         
         self.skip_proj = nn.Linear(D, E, bias=False)
-        self.hook_skip_proj = CloningHookPoint() # [B,L,E]
+        self.hook_skip_proj = HookPoint() # [B,L,E]
         self.in_proj   = nn.Linear(D, E, bias=False)
-        self.hook_in_proj = CloningHookPoint() # [B,L,E]
+        self.hook_in_proj = HookPoint() # [B,L,E]
         
         ## Conv
         self.conv1d    = nn.Conv1d(
@@ -1124,9 +1123,9 @@ class HookedMambaBlock(nn.Module):
             groups=E,
             padding=D_conv - 1,
         )
-        self.hook_conv = CloningHookPoint()  # [B,L+D_conv-1,E]
-        self.hook_conv_after_cutoff = CloningHookPoint() # [B,L,E]
-        self.hook_ssm_input = CloningHookPoint() # [B,L,E]
+        self.hook_conv = HookPoint()  # [B,L+D_conv-1,E]
+        self.hook_conv_after_cutoff = HookPoint() # [B,L,E]
+        self.hook_ssm_input = HookPoint() # [B,L,E]
         
         ## SSM Params
         self.W_delta_1 = nn.Linear(E, D_delta, bias=False)
@@ -1137,42 +1136,41 @@ class HookedMambaBlock(nn.Module):
         self.A_log     = nn.Parameter(torch.log(torch.randn([E,N])))
         
         
-        self.hook_h_start = CloningHookPoint()     # [B,E,N]
+        self.hook_h_start = HookPoint()     # [B,E,N]
         
-        self.hook_delta_1 = CloningHookPoint() # [B,L,D_delta]
-        self.hook_delta_2 = CloningHookPoint() # [B,L,E]
-        self.hook_delta = CloningHookPoint() # [B,L,E]
+        self.hook_delta_1 = HookPoint() # [B,L,D_delta]
+        self.hook_delta_2 = HookPoint() # [B,L,E]
+        self.hook_delta = HookPoint() # [B,L,E]
         
-        self.hook_A_bar = CloningHookPoint() # [B,L,E,N]
-        self.hook_B = CloningHookPoint()     # [B,L,N]
-        self.hook_B_bar = CloningHookPoint() # [B,L,E,N]
+        self.hook_A_bar = HookPoint() # [B,L,E,N]
+        self.hook_B = HookPoint()     # [B,L,N]
+        self.hook_B_bar = HookPoint() # [B,L,E,N]
         
-        self.hook_C = CloningHookPoint()     # [B,L,N]
+        self.hook_C = HookPoint()     # [B,L,N]
         
-        self.hook_h = InputDependentCloningHookPoint(input_dependent_postfixes)     # [B,E,N], with l param
-        self.hook_y_l = InputDependentCloningHookPoint(input_dependent_postfixes)   # [B,E], with l param
+        self.hook_h = InputDependentHookPoint(input_dependent_postfixes)     # [B,E,N], with l param
         
-        self.hook_ssm_output = CloningHookPoint() # [B,L,E]
+        self.hook_y = HookPoint() # [B,L,E]
 
         self.W_D = nn.Parameter(torch.ones(E))
-        self.hook_after_d = CloningHookPoint() # [B,L,E]
+        self.hook_ssm_output = HookPoint() # [B,L,E]
         
-        self.hook_after_skip = CloningHookPoint() # [B,L,E]
+        self.hook_after_skip = HookPoint() # [B,L,E]
         
         
         ## Project back out
         self.out_proj  = nn.Linear(E, D, bias=False)
-        self.hook_out_proj = CloningHookPoint() # [B,L,D]
-        self.hook_resid_post = CloningHookPoint() # [B,L,D]
+        self.hook_out_proj = HookPoint() # [B,L,D]
+        self.hook_resid_post = HookPoint() # [B,L,D]
         
     def has_hooks_in_inner_loop(self):
         for name, module in self.named_modules():
-            if "InputDependentCloningHookPoint" in str(type(module)):
+            if "InputDependentHookPoint" in str(type(module)):
                 if len(module.fwd_hooks) > 0 or len(module.bwd_hooks) > 0:
                     return True
         return False
     
-    def forward(self, resid, workplace_h):
+    def forward(self, resid):
         
         cfg = self.cfg
         D = cfg.d_model
@@ -1185,35 +1183,35 @@ class HookedMambaBlock(nn.Module):
         Batch,L,D = resid.size()
         
         ###### Process inputs ######
-        resid      = self.hook_resid_pre(resid.clone()) # [B,L,D]
-
+        resid      = self.hook_resid_pre(resid) # [B,L,D]
+        
         # [B,L,D]             [B,L,D]
-        x          = self.norm(  resid  )
-        x          = self.hook_normalized_input(x) # [B,L,E]
+        resid_norm = self.norm(  resid  )
+        resid_norm = self.hook_normalized_input(resid_norm) # [B,L,E]
         
         # [B,L,E]          [D->E]     [B,L,D]
-        skip       = self.skip_proj( x ) # no bias
+        skip       = self.skip_proj( resid_norm ) # no bias
         skip       = self.hook_skip_proj(skip) # [B,L,E]
         
         # [B,L,E]          [D->E]   [B,L,D]
-        x          = self.in_proj( x ) # no bias
-        x          = self.hook_in_proj(x) # [B,L,E]
+        x_in       = self.in_proj( resid_norm ) # no bias
+        x_in       = self.hook_in_proj(x_in) # [B,L,E]
         
         ###### Conv ######
         # [B,E,L]
-        x          = rearrange(x, 'B L E -> B E L')
+        x_conv     = rearrange(x_in, 'B L E -> B E L')
         # [B,E,L+3]                 [B,E,L]  conv1d outputs [B,E,3+L], cut off last 3
-        x          = self.conv1d(   x   )
+        x_conv_out = self.conv1d(   x_conv   )
         # [B,L+3,E]            [B,E,L+3]
-        x          = rearrange(x, 'B E L -> B L E')
-        x          = self.hook_conv(x) # [B,L+3,E] 
+        x_conv_out = rearrange(x_conv_out, 'B E L -> B L E')
+        x_conv_out = self.hook_conv(x_conv_out) # [B,L+3,E] 
         # [B,L,E]
-        x          = x[:,:L,:]
-        x          = self.hook_conv_after_cutoff(x) # [B,L,E]
+        x_conv_out_cutoff = x_conv_out[:,:L,:]
+        x_conv_out_cutoff = self.hook_conv_after_cutoff(x_conv_out_cutoff) # [B,L,E]
 
         ###### Nonlinearity  ######
         # [B,L,E]               [B,L,E]
-        x         = F.silu( x )
+        x         = F.silu( x_conv_out_cutoff )
         x         = self.hook_ssm_input(x) # [B,L,E]
         
         ###### SSM ######
@@ -1223,9 +1221,7 @@ class HookedMambaBlock(nn.Module):
         ys = []
        
         # latent state, init to zeros
-        # optimization, we use the same memory as prev layers
-        h = workplace_h 
-        h[:] = 0
+        h = torch.zeros([Batch,E,N], device=self.cfg.device)
         h = self.hook_h_start(h) 
         
         # do things the slow way if we have hooks
@@ -1338,8 +1334,10 @@ class HookedMambaBlock(nn.Module):
         C           = self.W_C(   x   ) # no bias
         C           = self.hook_C(C) # [B,L,N]
         
-        ys = []
         # Now we do the recurrence
+        ys = []
+        
+        h = torch.zeros([Batch,E,N], device=self.cfg.device)
         for l in range(L):
             
             def apply_hook(hook, value):
@@ -1351,41 +1349,38 @@ class HookedMambaBlock(nn.Module):
                 else: # not setup, maybe called forward by itself?
                     return value
             
-            # [B,E,N]      [B,E,N]    
-            h        *= A_bar[:,l,:,:] 
-            #  [B,E,N]     [B,E,N]           [B,E]
-            h        += B_bar[:,l,:,:] * x[:,l].view(Batch, E, 1)
+            # [B,E,N]   [B,E,N]     [B,E,N]          [B,E,N]          [B,E]
+            h        =    h    *  A_bar[:,l,:,:]  + B_bar[:,l,:,:] * x[:,l].view(Batch, E, 1)
             h        = apply_hook(self.hook_h, h) # [B,E,N]
             
             # [B,E]    [B,E,N]       [B,N,1]   # this is like [E,N] x [N,1] for each batch
             y_l       =   h     @   C[:,l,:].view(Batch,N,1)
             # [B,E]              [B,E,1]
             y_l      =    y_l.view(Batch,E)
-            y_l      = apply_hook(self.hook_y_l, y_l) # [B,E]
-            
             ys.append(y_l)
+            
         # we have lots of [B,E]
         # we need to stack them along the 1 dimension to get [B,L,E]
         y = torch.stack(ys, dim=1)
-        y = self.hook_ssm_output(y) # [B,L,E]
+        y = self.hook_y(y) # [B,L,E]
         
         ###### Finish block ######
         
-        # [B,L,E]   [B,L,E]       [E]
-        y         +=  x     *  self.W_D
-        y          =  self.hook_after_d(y) # [B,L,E]
+        # [B,L,E]  [B,L,E]    [B,L,E]       [E]
+        y_apply_D =   y      +   x     *  self.W_D
+        y_apply_D =  self.hook_ssm_output(y_apply_D) # [B,L,E]
         
-        # [B,L,E]          [B,L,E]
-        y         *= F.silu(  skip  )
-        y          =  self.hook_after_skip(y) # [B,L,E]
+        # [B,L,E]   [B,L,E]             [B,L,E]
+        y_skip    = y_apply_D * F.silu(  skip  )
+        y_skip    =  self.hook_after_skip(y_skip) # [B,L,E]
         
         # [B,L,D]         [E->D]   [B,L,E]
-        y          = self.out_proj(    y   ) # no bias
-        y          = self.hook_out_proj(y) # [B,L,D]
+        y_out     = self.out_proj( y_skip ) # no bias
+        y_out     = self.hook_out_proj(y_out) # [B,L,D]
     
-        # [B,L,D]      [B,L,D] 
-        resid       += y
-        resid       = self.hook_resid_post(resid) # [B,L,D]
+        # [B,L,D]      [B,L,D]   [B,L,D]
+        resid     = resid +  y_out
+        resid     = self.hook_resid_post(resid) # [B,L,D]
         
         return resid
 
