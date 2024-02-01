@@ -4,7 +4,6 @@ import random
 import multiprocessing
 
 from transformers import AutoTokenizer
-from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 
 from docstring import docstring_prompt_generator_function
 
@@ -15,6 +14,7 @@ MODELS = [ 'mamba-370m', 'mamba-130m']
 MODELS = [('state-spaces/' + m) for m in MODELS]
 
 def load(model_str, device='cuda', dtype=torch.float16, tokenizer_str=MAMBA_TOKENIZER_STR):
+    from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
     model = MambaLMHeadModel.from_pretrained(model_str, device=device, dtype=dtype)
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_str)
     return model, tokenizer

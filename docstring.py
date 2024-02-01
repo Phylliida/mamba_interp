@@ -9,14 +9,15 @@ from transformer_lens import HookedTransformer
 from typeguard import typechecked
 from torchtyping import patch_typeguard, TensorType as TT
 
-variable_names = "data name file value test new result line user key default request path output node item url model response text version function log string field start number values sub index error current context image message check json create size event state row obj parser end files form query fields instance label run action target array code num table source msg config first required options ret update module status group content client filename results last read command val base format color settings order found count match tag title parent call session token server host date description mode expected project info valid page header option task shape load names port old resource root".split(" ")
-common_single_token_nouns = ['price', 'control', 'action', 'cost', 'issue', 'process', 'position', 'course', 'minute', 'education', 'type', 'research', 'subject', 'girl', 'age', 'father', 'force', 'order', 'value', 'act', 'matter', 'health', 'lot', 'street', 'patient', 'class', 'mind', 'church', 'condition', 'paper', 'bank', 'century', 'section', 'activity', 'table', 'building', 'sense', 'sort', 'staff', 'team', 'student', 'language', 'town', 'plan', 'management', 'morning', 'committee', 'product', 'practice', 'evidence', 'ground', 'letter', 'foot', 'boy', 'back', 'game', 'food', 'union', 'role', 'event', 'land', 'art', 'support', 'range', 'stage', 'trade', 'voice', 'arm', 'club', 'field', 'history', 'parent', 'account', 'material', 'care', 'manager', 'project', 'record', 'example', 'training', 'window', 'air', 'light', 'wife', 'quality', 'rule', 'pound', 'story', 'tax', 'worker', 'data', 'model', 'nature', 'bed', 'hospital', 'method', 'unit', 'detail', 'date', 'wall', 'computer', 'amount', 'bit', 'president', 'chapter', 'property', 'son', 'director', 'leader', 'south', 'application', 'board', 'king', 'production', 'operation', 'share', 'lord', 'contract', 'picture', 'test', 'security', 'election', 'source', 'colour', 'future', 'site', 'loss', 'shop', 'animal', 'heart', 'purpose', 'standard', 'page', 'doctor', 'factor', 'hair', 'love', 'music', 'charge', 'pattern', 'design', 'piece', 'population', 'tree', 'knowledge', 'performance', 'plant', 'pressure', 'fire', 'environment', 'size', 'analysis', 'rest', 'success', 'thought', 'region', 'list', 'relation', 'set', 'space', 'statement', 'demand', 'sea', 'step', 'capital', 'choice', 'player', 'station', 'film', 'feature', 'income', 'individual', 'cup', 'technology', 'machine', 'cell', 'degree', 'energy', 'growth', 'treatment', 'mile', 'function', 'risk', 'sound', 'task', 'top', 'resource', 'floor', 'science', 'style', 'hall', 'horse', 'response', 'character', 'user', 'answer', 'dog', 'look', 'brother', 'argument', 'season', 'bill', 'element', 'glass', 'duty', 'claim', 'fund', 'leg', 'park', 'title', 'note', 'daughter', 'sun', 'box', 'river', 'profit', 'division', 'stone', 'post', 'client', 'help', 'image', 'oil', 'sector', 'attack', 'direction', 'seat', 'employment', 'goal', 'sign', 'ability', 'campaign', 'fish', 'item', 'medium', 'show', 'version', 'drug', 'library', 'press', 'surface', 'blood', 'culture', 'memory', 'return', 'bar', 'talk', 'access', 'deal', 'star', 'text', 'cause', 'mouth', 'payment', 'context', 'reference', 'second', 'article', 'chair', 'earth', 'object', 'agency', 'card', 'collection', 'communication', 'public', 'document', 'weight', 'bird', 'rock', 'call', 'edge', 'miss', 'option', 'quarter', 'stock', 'aid', 'concept', 'match', 'network', 'radio', 'target', 'finger', 'forest', 'race', 'sex', 'ball', 'crime', 'message', 'peace', 'review', 'scale', 'scene', 'speech', 'band', 'expression', 'hill', 'reader', 'owner', 'trust', 'truth', 'turn', 'file', 'past', 'start', 'trial', 'balance', 'copy', 'league', 'length', 'wind', 'front', 'move', 'pain', 'spirit', 'train', 'contact', 'official', 'strength', 'cash', 'gas', 'shape', 'agent', 'pair', 'protection', 'rise', 'driver', 'master', 'meaning', 'vote', 'adult', 'play', 'fig', 'route', 'speed', 'credit', 'impact', 'danger', 'flower', 'half', 'path', 'track', 'video', 'aim', 'bag', 'comment', 'content', 'distance', 'gold', 'link', 'skin', 'boat', 'dad', 'prison', 'sight', 'wine', 'offer', 'writer', 'hole', 'package', 'confidence', 'generation', 'key', 'phone', 'sample', 'ship', 'threat', 'volume', 'author', 'background', 'engine', 'entry', 'stuff', 'yard', 'bus', 'regulation', 'row', 'song', 'category', 'consumer', 'football', 'meal', 'wood', 'bridge', 'description', 'existence', 'flat', 'lip', 'session', 'sheet', 'code', 'flight', 'limit', 'plate', 'rain', 'respect', 'writing', 'capacity', 'dream', 'selection', 'spring', 'while', 'definition', 'egg', 'examination', 'mark', 'notice', 'output', 'will', 'address', 'bottom', 'kid', 'middle', 'neck', 'run', 'acid', 'assembly', 'birth', 'ear', 'error', 'module', 'store', 'transfer', 'wave', 'channel', 'component', 'cut', 'fee', 'lead', 'weather', 'block', 'brain', 'guide', 'program', 'screen', 'connection', 'cover', 'map', 'metal', 'phase', 'pool', 'search', 'sequence', 'sky', 'sum', 'trip', 'cat', 'display', 'gallery', 'gate', 'heat', 'location', 'reading', 'theme', 'drive', 'faith', 'hell', 'learning', 'opening', 'priority', 'spot', 'tool', 'castle', 'coal', 'flow', 'lane', 'motion', 'release', 'total', 'wing', 'border', 'index', 'pocket', 'ring', 'billion', 'device', 'engineering', 'fruit', 'lake', 'leaf', 'pub', 'request', 'square', 'tone', 'walk', 'chain', 'circle', 'creation', 'fall', 'present', 'shot', 'fashion', 'god', 'mass', 'panel', 'fan', 'iron', 'origin', 'ticket', 'bone', 'cancer', 'chief', 'editor', 'fuel', 'general', 'height', 'round', 'vision', 'warning', 'being', 'cross', 'living', 'rail', 'working', 'column', 'finding', 'gap', 'grass', 'plane', 'root', 'score', 'shadow', 'shock', 'touch', 'database', 'formation', 'male', 'ref', 'resident', 'resolution', 'topic', 'break', 'camp', 'currency', 'phrase', 'thinking', 'coat', 'mill', 'stress', 'boot', 'command', 'depth', 'female', 'frame', 'framework', 'holder', 'ice', 'inch', 'port', 'protein', 'rose', 'saving', 'string', 'wheel', 'bishop', 'cycle', 'export', 'hat', 'load', 'mode', 'setting', 'stairs', 'travel', 'average', 'camera', 'focus', 'green', 'guard', 'input', 'layer', 'poll', 'sleep', 'suit', 'bread', 'cake', 'efficiency', 'peak', 'self', 'angle', 'bay', 'bid', 'cloud', 'custom', 'dollar', 'variable', 'zone', 'actor', 'chip', 'core', 'final', 'frequency', 'gain', 'guy', 'relative', 'rent', 'reply', 'secret', 'shirt', 'apple', 'instance', 'intelligence', 'lad', 'pipe', 'anger', 'disk', 'fight', 'hero', 'journal', 'left', 'mail', 'pace', 'paragraph', 'platform', 'print', 'rank', 'sand', 'scope', 'shift', 'stream', 'chemical', 'clock', 'delay', 'host', 'human', 'count', 'mission', 'pack', 'seed', 'tail', 'tie', 'watch', 'dark', 'hold', 'mine', 'net', 'tip', 'dimension', 'operator', 'professional', 'shell', 'storage', 'summary', 'tube', 'conduct', 'determination', 'drop', 'import', 'label', 'percent', 'pot', 'proof', 'unity', 'win', 'wire', 'bell', 'comfort', 'complex', 'draft', 'grade', 'lift', 'mouse', 'movie', 'profile', 'standing', 'belt', 'black', 'check', 'joy', 'local', 'pit', 'red', 'register', 'storm', 'album', 'ban', 'bench', 'button', 'cap', 'chart', 'coin', 'dust', 'folk', 'margin', 'pole', 'stand', 'stick', 'tin']
+VARIABLE_NAMES = "data name file value test new result line user key default request path output node item url model response text version function log string field start number values sub index error current context image message check json create size event state row obj parser end files form query fields instance label run action target array code num table source msg config first required options ret update module status group content client filename results last read command val base format color settings order found count match tag title parent call session token server host date description mode expected project info valid page header option task shape load names port old resource root".split(" ")
+NOUNS = ['price', 'control', 'action', 'cost', 'issue', 'process', 'position', 'course', 'minute', 'education', 'type', 'research', 'subject', 'girl', 'age', 'father', 'force', 'order', 'value', 'act', 'matter', 'health', 'lot', 'street', 'patient', 'class', 'mind', 'church', 'condition', 'paper', 'bank', 'century', 'section', 'activity', 'table', 'building', 'sense', 'sort', 'staff', 'team', 'student', 'language', 'town', 'plan', 'management', 'morning', 'committee', 'product', 'practice', 'evidence', 'ground', 'letter', 'foot', 'boy', 'back', 'game', 'food', 'union', 'role', 'event', 'land', 'art', 'support', 'range', 'stage', 'trade', 'voice', 'arm', 'club', 'field', 'history', 'parent', 'account', 'material', 'care', 'manager', 'project', 'record', 'example', 'training', 'window', 'air', 'light', 'wife', 'quality', 'rule', 'pound', 'story', 'tax', 'worker', 'data', 'model', 'nature', 'bed', 'hospital', 'method', 'unit', 'detail', 'date', 'wall', 'computer', 'amount', 'bit', 'president', 'chapter', 'property', 'son', 'director', 'leader', 'south', 'application', 'board', 'king', 'production', 'operation', 'share', 'lord', 'contract', 'picture', 'test', 'security', 'election', 'source', 'colour', 'future', 'site', 'loss', 'shop', 'animal', 'heart', 'purpose', 'standard', 'page', 'doctor', 'factor', 'hair', 'love', 'music', 'charge', 'pattern', 'design', 'piece', 'population', 'tree', 'knowledge', 'performance', 'plant', 'pressure', 'fire', 'environment', 'size', 'analysis', 'rest', 'success', 'thought', 'region', 'list', 'relation', 'set', 'space', 'statement', 'demand', 'sea', 'step', 'capital', 'choice', 'player', 'station', 'film', 'feature', 'income', 'individual', 'cup', 'technology', 'machine', 'cell', 'degree', 'energy', 'growth', 'treatment', 'mile', 'function', 'risk', 'sound', 'task', 'top', 'resource', 'floor', 'science', 'style', 'hall', 'horse', 'response', 'character', 'user', 'answer', 'dog', 'look', 'brother', 'argument', 'season', 'bill', 'element', 'glass', 'duty', 'claim', 'fund', 'leg', 'park', 'title', 'note', 'daughter', 'sun', 'box', 'river', 'profit', 'division', 'stone', 'post', 'client', 'help', 'image', 'oil', 'sector', 'attack', 'direction', 'seat', 'employment', 'goal', 'sign', 'ability', 'campaign', 'fish', 'item', 'medium', 'show', 'version', 'drug', 'library', 'press', 'surface', 'blood', 'culture', 'memory', 'return', 'bar', 'talk', 'access', 'deal', 'star', 'text', 'cause', 'mouth', 'payment', 'context', 'reference', 'second', 'article', 'chair', 'earth', 'object', 'agency', 'card', 'collection', 'communication', 'public', 'document', 'weight', 'bird', 'rock', 'call', 'edge', 'miss', 'option', 'quarter', 'stock', 'aid', 'concept', 'match', 'network', 'radio', 'target', 'finger', 'forest', 'race', 'sex', 'ball', 'crime', 'message', 'peace', 'review', 'scale', 'scene', 'speech', 'band', 'expression', 'hill', 'reader', 'owner', 'trust', 'truth', 'turn', 'file', 'past', 'start', 'trial', 'balance', 'copy', 'league', 'length', 'wind', 'front', 'move', 'pain', 'spirit', 'train', 'contact', 'official', 'strength', 'cash', 'gas', 'shape', 'agent', 'pair', 'protection', 'rise', 'driver', 'master', 'meaning', 'vote', 'adult', 'play', 'fig', 'route', 'speed', 'credit', 'impact', 'danger', 'flower', 'half', 'path', 'track', 'video', 'aim', 'bag', 'comment', 'content', 'distance', 'gold', 'link', 'skin', 'boat', 'dad', 'prison', 'sight', 'wine', 'offer', 'writer', 'hole', 'package', 'confidence', 'generation', 'key', 'phone', 'sample', 'ship', 'threat', 'volume', 'author', 'background', 'engine', 'entry', 'stuff', 'yard', 'bus', 'regulation', 'row', 'song', 'category', 'consumer', 'football', 'meal', 'wood', 'bridge', 'description', 'existence', 'flat', 'lip', 'session', 'sheet', 'code', 'flight', 'limit', 'plate', 'rain', 'respect', 'writing', 'capacity', 'dream', 'selection', 'spring', 'while', 'definition', 'egg', 'examination', 'mark', 'notice', 'output', 'will', 'address', 'bottom', 'kid', 'middle', 'neck', 'run', 'acid', 'assembly', 'birth', 'ear', 'error', 'module', 'store', 'transfer', 'wave', 'channel', 'component', 'cut', 'fee', 'lead', 'weather', 'block', 'brain', 'guide', 'program', 'screen', 'connection', 'cover', 'map', 'metal', 'phase', 'pool', 'search', 'sequence', 'sky', 'sum', 'trip', 'cat', 'display', 'gallery', 'gate', 'heat', 'location', 'reading', 'theme', 'drive', 'faith', 'hell', 'learning', 'opening', 'priority', 'spot', 'tool', 'castle', 'coal', 'flow', 'lane', 'motion', 'release', 'total', 'wing', 'border', 'index', 'pocket', 'ring', 'billion', 'device', 'engineering', 'fruit', 'lake', 'leaf', 'pub', 'request', 'square', 'tone', 'walk', 'chain', 'circle', 'creation', 'fall', 'present', 'shot', 'fashion', 'god', 'mass', 'panel', 'fan', 'iron', 'origin', 'ticket', 'bone', 'cancer', 'chief', 'editor', 'fuel', 'general', 'height', 'round', 'vision', 'warning', 'being', 'cross', 'living', 'rail', 'working', 'column', 'finding', 'gap', 'grass', 'plane', 'root', 'score', 'shadow', 'shock', 'touch', 'database', 'formation', 'male', 'ref', 'resident', 'resolution', 'topic', 'break', 'camp', 'currency', 'phrase', 'thinking', 'coat', 'mill', 'stress', 'boot', 'command', 'depth', 'female', 'frame', 'framework', 'holder', 'ice', 'inch', 'port', 'protein', 'rose', 'saving', 'string', 'wheel', 'bishop', 'cycle', 'export', 'hat', 'load', 'mode', 'setting', 'stairs', 'travel', 'average', 'camera', 'focus', 'green', 'guard', 'input', 'layer', 'poll', 'sleep', 'suit', 'bread', 'cake', 'efficiency', 'peak', 'self', 'angle', 'bay', 'bid', 'cloud', 'custom', 'dollar', 'variable', 'zone', 'actor', 'chip', 'core', 'final', 'frequency', 'gain', 'guy', 'relative', 'rent', 'reply', 'secret', 'shirt', 'apple', 'instance', 'intelligence', 'lad', 'pipe', 'anger', 'disk', 'fight', 'hero', 'journal', 'left', 'mail', 'pace', 'paragraph', 'platform', 'print', 'rank', 'sand', 'scope', 'shift', 'stream', 'chemical', 'clock', 'delay', 'host', 'human', 'count', 'mission', 'pack', 'seed', 'tail', 'tie', 'watch', 'dark', 'hold', 'mine', 'net', 'tip', 'dimension', 'operator', 'professional', 'shell', 'storage', 'summary', 'tube', 'conduct', 'determination', 'drop', 'import', 'label', 'percent', 'pot', 'proof', 'unity', 'win', 'wire', 'bell', 'comfort', 'complex', 'draft', 'grade', 'lift', 'mouse', 'movie', 'profile', 'standing', 'belt', 'black', 'check', 'joy', 'local', 'pit', 'red', 'register', 'storm', 'album', 'ban', 'bench', 'button', 'cap', 'chart', 'coin', 'dust', 'folk', 'margin', 'pole', 'stand', 'stick', 'tin']
 
 @dataclass
 class Prompt:
     clean_prompt: str
     corrupt_prompt: Union[str, Dict[str, str]]
     correct_answers: List[str]
+    random_answer: str
     wrong_answers: List[str]
 
     def __post_init__(self):
@@ -154,6 +155,7 @@ def docstring_prompt_templ(
     
 
 def docstring_prompt_gen(
+    tokenizer,
     style: str, # rest or goog,
     *,
     n_args: int, # num of args in method def
@@ -169,6 +171,8 @@ def docstring_prompt_gen(
     if pred_nth_arg is None:
         # predict the last arg
         pred_nth_arg = n_args - 1
+    common_single_token_nouns = [n for n in NOUNS if len(tokenizer.encode(n)) == 1]
+    variable_names = [v for v in VARIABLE_NAMES if len(tokenizer.encode(v)) == 1]
     
     met_name, *def_args = random.sample(variable_names, 1+n_args)
     clean_doc_args = def_args[:pred_nth_arg]
@@ -279,6 +283,7 @@ def docstring_prompt_gen(
 
 
 def docstring_induction_prompt_generator(
+    tokenizer,
     style: str, # rest or goog,
     *,
     n_matching_args: int,
@@ -293,6 +298,9 @@ def docstring_induction_prompt_generator(
     assert style in ["rest", "goog"]
     
     random.seed(seed)
+
+    common_single_token_nouns = [n for n in NOUNS if len(tokenizer.encode(" " + n.strip())) == 1]
+    variable_names = [v for v in VARIABLE_NAMES if len(tokenizer.encode(" " + v.strip())) == 1]
 
     n_not_matching_args = n_matching_args - 1
     met_name, *all_args = random.sample(variable_names, 2+n_matching_args+n_not_matching_args+n_not_matching_args+n_matching_args+n_def_prefix_args+n_def_suffix_args+n_doc_prefix_args)
@@ -430,6 +438,7 @@ def docstring_induction_prompt_generator(
             vary_length_doc_desc=vary_length_doc_desc_prompt,
             vary_length_doc_desc_random_doc=vary_length_doc_desc_random_doc_prompt,
         ),
+        random_answer=random_answer,
         correct_answers=correct_answers,
         wrong_answers=wrong_answers
     )
@@ -441,19 +450,38 @@ def strip_to_first_token(tokenizer, s):
         raise Exception(f"when turned into single token {s} becomes only whitespace")
     return res
     
-def docstring_prompt_generator_function(tokenizer, num_examples):
+# if pair is True, return prompt, then corrupted prompt
+def docstring_prompt_generator_function(tokenizer, num_examples, corrupt=None, seed=27):
     docstring_ind_prompt_kwargs = dict(
         n_matching_args=3, n_def_prefix_args=2, n_def_suffix_args=1, n_doc_prefix_args=0, met_desc_len=3, arg_desc_len=2
     )
 
-    raw_prompts = [
-        docstring_induction_prompt_generator("rest", **docstring_ind_prompt_kwargs, seed=i)
-        for i in range(num_examples)
-    ]
-    
+    random.seed(seed)
+    raw_prompts = []
+
+    if not corrupt is None:
+        num_examples = num_examples // 2
+
+    for i in range(num_examples):
+        seed = random.randint(0, 25555555)
+        prompt = docstring_induction_prompt_generator(tokenizer, "rest", **docstring_ind_prompt_kwargs, seed=seed)
+        raw_prompts.append(prompt)
+
     for prompt in raw_prompts:
         corrects = [strip_to_first_token(tokenizer, correct) for correct in prompt.correct_answers]
         incorrects = [strip_to_first_token(tokenizer, incorrect) for incorrect in prompt.wrong_answers]
         yield prompt.clean_prompt, corrects, incorrects
+
+        if not corrupt is None:
+            if corrupt == 'random_answer':
+                corrupted_prompt = prompt.corrupt_prompt[corrupt]
+                corrupted_corrects = [strip_to_first_token(tokenizer, " " + prompt.random_answer)]
+                corrupted_incorrects = [strip_to_first_token(tokenizer, incorrect) for incorrect in prompt.wrong_answers]
+                corrupted_incorrects.append(corrects[0]) # add the original correct answer to incorrects
+                if corrupted_corrects[0] in corrupted_incorrects: # remove the random answer from incorrects if it is there
+                    corrupted_incorrects.remove(corrupted_corrects[0])
+                yield corrupted_prompt, corrupted_corrects, corrupted_incorrects
+            else:
+                raise ValueError(f"corrupt {corrupt} not implemented, try corrupt=random_answer")
     
     return raw_prompts
