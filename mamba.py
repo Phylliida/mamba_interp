@@ -456,7 +456,7 @@ class CloningHookPoint(HookPoint):
 
     def forward(self, x):
         if self.has_hooks():
-            return super().forward(x.clone())
+            return super().forward(x.clone().detach())
         else:
             return x
 
@@ -1044,18 +1044,21 @@ class HookedMamba(InputDependentHookedRootModule):
             resid         = self.embedding(input)
         else: #[B,L,D]     [B,L,D]
             resid         = input
-        resid_f         = self.hook_embed(resid)
+        resid         = self.hook_embed(resid)
+        
+        # just data they can use, each layer will reset them
+        workplace_h = torch.zeros([Batch,E,N], device=self.cfg.device)
         
         for layer in self.blocks:
             # [B,L,D]        [B,L,D]
-            resid_f     = layer(resid_f)
+            resid     = layer(resid, workplace_h)
          
-        # [B,L,D]             [B,L,D]
-        residg     = self.norm( resid_f )
-        residg     = self.hook_norm(residg) # [B,L,D]
+        # [B,L,D]              [B,L,D]
+        resid     = self.norm( resid )
+        resid     = self.hook_norm(resid) # [B,L,D]
         
         # [B,L,V]          [D->V]    [B,L,D]
-        logits    = self.lm_head( residg ) # no bias
+        logits    = self.lm_head( resid ) # no bias
         logits    = self.hook_logits(logits) # [B,L,V]
         
         if return_type is None:
@@ -1167,7 +1170,7 @@ class HookedMambaBlock(nn.Module):
                     return True
         return False
     
-    def forward(self, resid):
+    def forward(self, resid, workplace_h):
         
         cfg = self.cfg
         D = cfg.d_model
@@ -1180,35 +1183,35 @@ class HookedMambaBlock(nn.Module):
         Batch,L,D = resid.size()
         
         ###### Process inputs ######
-        residin  = self.hook_resid_pre(resid) # [B,L,D]
+        resid      = self.hook_resid_pre(resid) # [B,L,D]
         
-        # [B,L,D]          [B,L,D]
-        residnn = self.norm(  residin  )
-        residnn = self.hook_normalized_input(residnn) # [B,L,E]
+        # [B,L,D]             [B,L,D]
+        x          = self.norm(  resid  )
+        x          = self.hook_normalized_input(x) # [B,L,E]
         
         # [B,L,E]          [D->E]     [B,L,D]
-        skip       = self.skip_proj( residnn ) # no bias
+        skip       = self.skip_proj( x ) # no bias
         skip       = self.hook_skip_proj(skip) # [B,L,E]
         
-        # [B,L,E]     [D->E]   [B,L,D]
-        xf       = self.in_proj( residnn ) # no bias
-        xf       = self.hook_in_proj(xf) # [B,L,E]
+        # [B,L,E]          [D->E]   [B,L,D]
+        x          = self.in_proj( x ) # no bias
+        x          = self.hook_in_proj(x) # [B,L,E]
         
         ###### Conv ######
         # [B,E,L]
-        xa          = rearrange(xf, 'B L E -> B E L')
+        x          = rearrange(x, 'B L E -> B E L')
         # [B,E,L+3]                 [B,E,L]  conv1d outputs [B,E,3+L], cut off last 3
-        xb          = self.conv1d(   xa   )
+        x          = self.conv1d(   x   )
         # [B,L+3,E]            [B,E,L+3]
-        xc          = rearrange(xb, 'B E L -> B L E')
-        xc          = self.hook_conv(xc) # [B,L+3,E] 
+        x          = rearrange(x, 'B E L -> B L E')
+        x          = self.hook_conv(x) # [B,L+3,E] 
         # [B,L,E]
-        xd          = xc[:,:L,:]
-        xd          = self.hook_conv_after_cutoff(xd) # [B,L,E]
+        x          = x[:,:L,:]
+        x          = self.hook_conv_after_cutoff(x) # [B,L,E]
 
         ###### Nonlinearity  ######
         # [B,L,E]               [B,L,E]
-        x         = F.silu( xd )
+        x         = F.silu( x )
         x         = self.hook_ssm_input(x) # [B,L,E]
         
         ###### SSM ######
@@ -1218,7 +1221,9 @@ class HookedMambaBlock(nn.Module):
         ys = []
        
         # latent state, init to zeros
-        h = torch.zeros([Batch,E,N], device=self.cfg.device)
+        # optimization, we use the same memory as prev layers
+        h = workplace_h 
+        h[:] = 0
         h = self.hook_h_start(h) 
         
         # do things the slow way if we have hooks
@@ -1331,10 +1336,8 @@ class HookedMambaBlock(nn.Module):
         C           = self.W_C(   x   ) # no bias
         C           = self.hook_C(C) # [B,L,N]
         
-        # Now we do the recurrence
         ys = []
-
-        h = torch.zeros([Batch,E,N], device=self.cfg.device)
+        # Now we do the recurrence
         for l in range(L):
             
             def apply_hook(hook, value):
@@ -1346,10 +1349,12 @@ class HookedMambaBlock(nn.Module):
                 else: # not setup, maybe called forward by itself?
                     return value
             
-            # [B,E,N]   [B,E,N]     [B,E,N]          [B,E,N]          [B,E]
-            h        =    h    *  A_bar[:,l,:,:]  + B_bar[:,l,:,:] * x[:,l].view(Batch, E, 1)
+            # [B,E,N]      [B,E,N]    
+            h        *= A_bar[:,l,:,:] 
+            #  [B,E,N]     [B,E,N]           [B,E]
+            h        += B_bar[:,l,:,:] * x[:,l].view(Batch, E, 1)
             h        = apply_hook(self.hook_h, h) # [B,E,N]
-
+            
             # [B,E]    [B,E,N]       [B,N,1]   # this is like [E,N] x [N,1] for each batch
             y_l       =   h     @   C[:,l,:].view(Batch,N,1)
             # [B,E]              [B,E,1]
@@ -1357,7 +1362,6 @@ class HookedMambaBlock(nn.Module):
             y_l      = apply_hook(self.hook_y_l, y_l) # [B,E]
             
             ys.append(y_l)
-            
         # we have lots of [B,E]
         # we need to stack them along the 1 dimension to get [B,L,E]
         y = torch.stack(ys, dim=1)
@@ -1365,23 +1369,24 @@ class HookedMambaBlock(nn.Module):
         
         ###### Finish block ######
         
-        # [B,L,E]  [B,L,E]       [E]
-        ya        = y +  x     *  self.W_D
-        ya         =  self.hook_after_d(ya) # [B,L,E]
+        # [B,L,E]   [B,L,E]       [E]
+        y         +=  x     *  self.W_D
+        y          =  self.hook_after_d(y) # [B,L,E]
         
-        # [B,L,E]            [B,L,E]
-        yb        = ya + F.silu(  skip  )
-        yb        =  self.hook_after_skip(yb) # [B,L,E]
+        # [B,L,E]          [B,L,E]
+        y         *= F.silu(  skip  )
+        y          =  self.hook_after_skip(y) # [B,L,E]
         
         # [B,L,D]         [E->D]   [B,L,E]
-        yc         = self.out_proj(    yb   ) # no bias
-        yc         = self.hook_out_proj(yc) # [B,L,D]
+        y          = self.out_proj(    y   ) # no bias
+        y          = self.hook_out_proj(y) # [B,L,D]
     
         # [B,L,D]      [B,L,D] 
-        resido      = resid + yc
-        resido     = self.hook_resid_post(resido) # [B,L,D]
+        resid       = resid.clone()
+        resid       += y
+        resid       = self.hook_resid_post(resid) # [B,L,D]
         
-        return resido
+        return resid
 
 
 
