@@ -1012,6 +1012,9 @@ class HookedMamba(InputDependentHookedRootModule):
         return_type: Optional[str] = "logits",
         loss_per_token: Optional[bool] = False,
         tokens: Optional[Int[torch.Tensor, "B L"]] = None,
+        fast_conv=False,
+        fast_ssm=False,
+        warn_disabled_hooks=True,
     ) -> Union[
         None,
         Float[torch.Tensor, "B L V"],
@@ -1052,7 +1055,7 @@ class HookedMamba(InputDependentHookedRootModule):
         
         for layer in self.blocks:
             # [B,L,D]         [B,L,D]
-            resid     = layer(resid)
+            resid     = layer(resid, fast_conv=fast_conv, fast_ssm=fast_ssm, warn_disabled_hooks=warn_disabled_hooks)
          
         # [B,L,D]                   [B,L,D]
         resid_normed     = self.norm( resid )
@@ -1170,7 +1173,7 @@ class HookedMambaBlock(nn.Module):
                     return True
         return False
     
-    def forward(self, resid):
+    def forward(self, resid, fast_conv=False, fast_ssm=False, warn_disabled_hooks=True):
         
         cfg = self.cfg
         D = cfg.d_model
@@ -1200,18 +1203,37 @@ class HookedMambaBlock(nn.Module):
         ###### Conv ######
         # [B,E,L]
         x_conv     = rearrange(x_in, 'B L E -> B E L')
-        # [B,E,L+3]                 [B,E,L]  conv1d outputs [B,E,3+L], cut off last 3
-        x_conv_out = self.conv1d(   x_conv   )
-        # [B,L+3,E]            [B,E,L+3]
-        x_conv_out = rearrange(x_conv_out, 'B E L -> B L E')
-        x_conv_out = self.hook_conv(x_conv_out) # [B,L+3,E] 
-        # [B,L,E]
-        x_conv_out_cutoff = x_conv_out[:,:L,:]
-        x_conv_out_cutoff = self.hook_conv_after_cutoff(x_conv_out_cutoff) # [B,L,E]
+        if fast_conv:
+            if warn_disabled_hooks:
+                for hook in [self.hook_conv, self.hook_conv_after_cutoff]:
+                    if len(hook.fwd_hooks) > 0 or len(hook.bwd_hooks) > 0:
+                        print(f"warning: hook {hook.name} will not be called because fast_conv=True")
 
-        ###### Nonlinearity  ######
-        # [B,L,E]               [B,L,E]
-        x         = F.silu( x_conv_out_cutoff )
+            from causal_conv1d import causal_conv1d_fn
+            # this does the silu and conv at same time
+            # so sadly we miss some hooks if we do this
+            # [B,E,L]
+            x_conv_out = causal_conv1d_fn(
+                x=x_conv,
+                weight=rearrange(self.conv1d.weight, "d 1 w -> d w"),
+                bias=self.conv1d.bias,
+                activation="silu",
+            )
+            # [B,L,E]
+            x         = rearrange(x_conv_out, 'B E L -> B L E')
+        else:
+            # [B,E,L+3]                 [B,E,L]  conv1d outputs [B,E,3+L], cut off last 3
+            x_conv_out = self.conv1d(   x_conv   )
+            # [B,L+3,E]            [B,E,L+3]
+            x_conv_out = rearrange(x_conv_out, 'B E L -> B L E')
+            x_conv_out = self.hook_conv(x_conv_out) # [B,L+3,E] 
+            # [B,L,E]
+            x_conv_out_cutoff = x_conv_out[:,:L,:]
+            x_conv_out_cutoff = self.hook_conv_after_cutoff(x_conv_out_cutoff) # [B,L,E]
+
+            ###### Nonlinearity  ######
+            # [B,L,E]               [B,L,E]
+            x         = F.silu( x_conv_out_cutoff )
         x         = self.hook_ssm_input(x) # [B,L,E]
         
         ###### SSM ######
@@ -1224,156 +1246,146 @@ class HookedMambaBlock(nn.Module):
         h = torch.zeros([Batch,E,N], device=self.cfg.device)
         h = self.hook_h_start(h) 
         
-        # do things the slow way if we have hooks
-        '''
-        for l in range(L):
-            
-            def apply_hook(hook, value):
-                postfix = make_postfix(l=l)
-                if postfix in hook.hooks:
-                    input_dependent_hook = hook.hooks[postfix]
-                    input_dependent_hook.l = l
-                    return input_dependent_hook(value)
-                else: # not setup, maybe called forward by itself?
-                    return value
-            
-            x[:,l] = apply_hook(self.hook_x_l, x[:,l]) # [B,E]
-            #### First, discretization: A and B -> A_bar and B_bar ####
-            ## Compute Delta ##
-            # [B,D_delta] [E->D_delta][B,E]
-            delta1  = self.W_delta_1(x[:,l]) # no bias
-            delta1  = apply_hook(self.hook_delta_1, delta1) # [B,D_delta]
-            
-            # [B,E]     [D_delta->E] [B,D_delta] 
-            delta2  = self.W_delta_2(delta1) # with bias
-            delta2  = apply_hook(self.hook_delta_2, delta2) # [B,E]
-            
-            # [B,E]             [B,E]
-            delta  = F.softplus(delta2) 
-            delta  = apply_hook(self.hook_delta, delta) # [B,E]
-            
-            ## Discretize A -> A_bar ##
-            # (note [B,E,1]*[E,N] will first repeat the [B,E,1] N times so its like [B,E,N])
-            # then we just do element-wise mulitply
-            # [B,E,N]             (     [B,E,1]      *  [E,N] ) 
-            A_bar    = torch.exp(delta.view(Batch,E,1) * self.A)
-            A_bar = apply_hook(self.hook_A_bar, A_bar) # [B,E,N]
-            
-            ## Discretize B -> B_bar ##
-            # [B,N]     [E->N] [B,E]
-            B        = self.W_B(x[:,l]) # no bias
-            B  = apply_hook(self.hook_B, B) # [B,N]
-            
-            # [B,E,N]        [B,E,1]       x    [B,1,N] (this is just like a [E,1]*[1,N] for each b)
-            B_bar    = delta.view(Batch,E,1) @ B.view(Batch,1,N)
-            B_bar = apply_hook(self.hook_B_bar, B_bar) # [B,E,N]
-            
-            #### Update latent vector h ####
-            ## input floats for the ssm at time l
-            # [B,E]    [B,E]
-            x_l      = x[:,l]
-            
-            ## Move ahead by one step
-            # (note, [B,E,N]*[B,E,1] will first repeat the [B,E,1] N times so its like [B,E,N])
-            # (then just do element-wise multiply)
-            # [B,E,N] [B,E,N] [B,E,N]  [B,E,N]     [B,E,1]
-            h        = A_bar *  h    +   B_bar  *  x_l.view(Batch,E,1)
-            h        = apply_hook(self.hook_h, h) # [B,E,N]
-            
-            #### Compute output float y ####
-            ## (C matrix needed for computing y)
-            # [B,N]     [E->N]  [B,E]
-            C        = self.W_C(x[:,l]) # no bias
-            C        = apply_hook(self.hook_C, C) # [B,N]
-            
-            ## Output floats y at time l
-            # [B,E,1]   [B,E,N]  x  [B,N,1]  # this is just a [E,N] x [N,1] for each batch
-            y_l      =     h    @ C.view(Batch,N,1)
-            # [B,E]              [B,E,1]
-            y_l      =    y_l.view(Batch,E)
-            y_l      = apply_hook(self.hook_y_l, y_l) # [B,E]
-            
-            ys.append(y_l)
-        '''
-        # go speedy (costs more memory, gives 1.85x speedup)
-        
-        ### This is simply computing the delta, A_bar, B_bar, and C from above all ahead of time,
+        ### Compute the delta, A_bar, B_bar, and C ahead of time,
         ### since none of them depend on h
         
         ## Compute Delta ##
         # [B,L,D_delta] [E->D_delta]  [B,E]
-        delta1        = self.W_delta_1( x ) # no bias
-        delta1        = self.hook_delta_1(delta1) # [B,L,D_delta]
+        delta_1        = self.W_delta_1( x ) # no bias
+        delta_1        = self.hook_delta_1(delta_1) # [B,L,D_delta]
         
         # [B,L,E]         [D_delta->E] [B,L,D_delta] 
-        delta2        = self.W_delta_2(  delta1  ) # with bias
-        delta2        = self.hook_delta_2(delta2) # [B,E]
-        
-        # [B,L,E]           [B,L,E]
-        delta  = F.softplus(delta2) 
-        delta  = self.hook_delta(delta) # [B,L,E]
-        
-        ## Discretize A
-        # [B,L,E,N]                    [B,L,E] [E,N]
-        A_bar       = torch.exp(einsum(delta, self.A, 'b l e, e n -> b l e n'))
-        A_bar       = self.hook_A_bar(A_bar) # [B,L,E,N]
-        
-        ## Discretize B (also, multiply by x ahead of time)
-        
+        delta_2        = self.W_delta_2(  delta_1  ) # with bias
+        delta_2        = self.hook_delta_2(delta_2) # [B,L,E]
+
         # [B,L,N]     [E->N]   [B,L,E]
         B           = self.W_B(   x   )
         B           = self.hook_B(B) # [B,L,N]
-        
-        # [B,L,E,N]          [B,L,E]  [B,L,N] 
-        B_bar       = einsum( delta,    B,     'b l e, b l n -> b l e n')
-        B_bar       = self.hook_B_bar(B_bar) # [B,L,E,N]
-        
+
         ## C
         # this just applies E->N projection to each E-sized vector
         # [B,L,N]      [E->N]  [B,L,E]     
         C           = self.W_C(   x   ) # no bias
         C           = self.hook_C(C) # [B,L,N]
+
+        inner_loop_hooks = [
+                self.hook_delta,
+                self.hook_A_bar,
+                self.hook_B_bar,
+                self.hook_y,
+        ] + list(self.hook_h.hooks.values())
         
-        # Now we do the recurrence
-        ys = []
-        
-        h = torch.zeros([Batch,E,N], device=self.cfg.device)
-        for l in range(L):
+
+        if fast_ssm:
+            import selective_scan_cuda
+
+            if warn_disabled_hooks:
+                for hook in inner_loop_hooks:
+                    if len(hook.fwd_hooks) > 0 or len(hook.bwd_hooks) > 0:
+                        print(f"warning: hook {hook.name} will not be called because fast_ssm=True")
+
+            # the cuda kernel is picky about shapes, rearrange things to make it happy
             
-            def apply_hook(hook, value):
-                postfix = make_postfix(l=l)
-                if postfix in hook.hooks:
-                    input_dependent_hook = hook.hooks[postfix]
-                    input_dependent_hook.l = l
-                    return input_dependent_hook(value)
-                else: # not setup, maybe called forward by itself?
-                    return value
+            # [B,E,L]
+            skip_ssm_input = rearrange(skip, "B L E -> B E L")
+            # [B,E,L]
+            x_ssm_input = rearrange(x, "B L E -> B E L")
+            # [B,E,L]
+            delta_2_ssm_input = rearrange(delta_2, 'B L E -> B E L')
+            # [B,1,N,L]
+            B_ssm_input = rearrange(B, 'B L N -> B 1 N L')
+            # [B,1,N,L]
+            C_ssm_input = rearrange(C, "B L N -> B 1 N L")
+
+            # hack because we applied bias above
+            # it's a little slower but that's ok
+            if not hasattr(self, "empty_bias"):
+                self.empty_bias = torch.zeros(self.W_delta_2.bias.size(), device=self.cfg.device)
+
+            # this does softplus(delta), discretization, inner loop, add x*D, and multiply softplus(skip)
+            # all the stuff you see in the else clause below 
+            y_apply_D_ssm_output, scan_intermediates, y_skip_ssm_output = selective_scan_cuda.fwd(
+                                    x_ssm_input.contiguous(), # u
+                                    delta_2_ssm_input.contiguous(), # delta
+                                    self.A.contiguous(), # A 
+                                    B_ssm_input.contiguous(), # B
+                                    C_ssm_input.contiguous(), # C
+                                    self.W_D.float(), # D
+                                    skip_ssm_input.contiguous(), # z
+                                    self.empty_bias, # delta_bias
+                                    True) # delta_softplus
             
-            # [B,E,N]   [B,E,N]     [B,E,N]          [B,E,N]          [B,E]
-            h        =    h    *  A_bar[:,l,:,:]  + B_bar[:,l,:,:] * x[:,l].view(Batch, E, 1)
-            h        = apply_hook(self.hook_h, h) # [B,E,N]
+            ssm_output_has_hooks = len(self.hook_ssm_output.fwd_hooks) > 0 or len(self.hook_ssm_output.bwd_hooks) > 0
+           
+            # recompute this if there was a hook,
+            # this is in case the hook modifies it
+            if ssm_output_has_hooks:
+                # [B,L,E]
+                y_apply_D = rearrange(y_apply_D_ssm_output, "B E L -> B L E")
+                y_apply_D = self.hook_ssm_output(y_apply_D) # [B,L,E]
+
+                # [B,L,E]   [B,L,E]             [B,L,E]
+                y_skip    = y_apply_D * F.silu(  skip  )
+            else:
+                # [B,L,E]
+                y_skip = rearrange(y_skip_ssm_output, "B E L -> B L E")
+        else:
+           
+            # [B,L,E]           [B,L,E]
+            delta  = F.softplus(delta_2) 
+            delta  = self.hook_delta(delta) # [B,L,E]
             
-            # [B,E]    [B,E,N]       [B,N,1]   # this is like [E,N] x [N,1] for each batch
-            y_l       =   h     @   C[:,l,:].view(Batch,N,1)
-            # [B,E]              [B,E,1]
-            y_l      =    y_l.view(Batch,E)
-            ys.append(y_l)
+            ## Discretize A
+            # [B,L,E,N]                    [B,L,E] [E,N]
+            A_bar       = torch.exp(einsum(delta, self.A, 'b l e, e n -> b l e n'))
+            A_bar       = self.hook_A_bar(A_bar) # [B,L,E,N]
             
-        # we have lots of [B,E]
-        # we need to stack them along the 1 dimension to get [B,L,E]
-        y = torch.stack(ys, dim=1)
-        y = self.hook_y(y) # [B,L,E]
-        
-        ###### Finish block ######
-        
-        # [B,L,E]  [B,L,E]    [B,L,E]       [E]
-        y_apply_D =   y      +   x     *  self.W_D
-        y_apply_D =  self.hook_ssm_output(y_apply_D) # [B,L,E]
-        
-        # [B,L,E]   [B,L,E]             [B,L,E]
-        y_skip    = y_apply_D * F.silu(  skip  )
+            ## Discretize B (also, multiply by x ahead of time)
+            # [B,L,E,N]          [B,L,E]  [B,L,N] 
+            B_bar       = einsum( delta,    B,     'b l e, b l n -> b l e n')
+            B_bar       = self.hook_B_bar(B_bar) # [B,L,E,N]
+            
+            # Now we do the recurrence
+            ys = []
+            
+            h = torch.zeros([Batch,E,N], device=self.cfg.device)
+            for l in range(L):
+                
+                def apply_hook(hook, value):
+                    postfix = make_postfix(l=l)
+                    if postfix in hook.hooks:
+                        input_dependent_hook = hook.hooks[postfix]
+                        input_dependent_hook.l = l
+                        return input_dependent_hook(value)
+                    else: # not setup, maybe called forward by itself?
+                        return value
+                
+                # [B,E,N]   [B,E,N]     [B,E,N]          [B,E,N]          [B,E]
+                h        =    h    *  A_bar[:,l,:,:]  + B_bar[:,l,:,:] * x[:,l].view(Batch, E, 1)
+                h        = apply_hook(self.hook_h, h) # [B,E,N]
+                
+                # [B,E]    [B,E,N]       [B,N,1]   # this is like [E,N] x [N,1] for each batch
+                y_l       =   h     @   C[:,l,:].view(Batch,N,1)
+                # [B,E]              [B,E,1]
+                y_l      =    y_l.view(Batch,E)
+                ys.append(y_l)
+                
+            # we have lots of [B,E]
+            # we need to stack them along the 1 dimension to get [B,L,E]
+            y = torch.stack(ys, dim=1)
+            y = self.hook_y(y) # [B,L,E]
+            
+            ###### Finish block ######
+            
+            # [B,L,E]  [B,L,E]    [B,L,E]       [E]
+            y_apply_D =   y      +   x     *  self.W_D
+            y_apply_D =  self.hook_ssm_output(y_apply_D) # [B,L,E]
+                
+            # [B,L,E]   [B,L,E]             [B,L,E]
+            y_skip    = y_apply_D * F.silu(  skip  )
+
         y_skip    =  self.hook_after_skip(y_skip) # [B,L,E]
-        
+            
         # [B,L,D]         [E->D]   [B,L,E]
         y_out     = self.out_proj( y_skip ) # no bias
         y_out     = self.hook_out_proj(y_out) # [B,L,D]
