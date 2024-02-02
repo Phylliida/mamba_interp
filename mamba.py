@@ -114,7 +114,6 @@ class ModelCfg:
             self.vocab_size += (self.pad_vocab_size_multiple
                                 - self.vocab_size % self.pad_vocab_size_multiple)
     
-        
     @property
     def D(self):
         return self.d_model
@@ -134,7 +133,6 @@ class ModelCfg:
     def V(self):
         return self.vocab_size
         
-
 class RMSNorm(nn.Module):
     def __init__(self,
                  d: int,
@@ -147,6 +145,7 @@ class RMSNorm(nn.Module):
         output = x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps) * self.weight
         return output
 
+# reference implementation
 # modified from https://github.com/johnma2006/mamba-minimal
 class Mamba(nn.Module):
     def __init__(self, cfg):
@@ -436,16 +435,6 @@ class MambaBlock(nn.Module):
         
         return resid
         
-class Timer():
-    def __init__(self, label):
-        self.label = label
-        
-    def __enter__(self):
-        self.start_time = current_milli_time()
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        print("elapsed", self.label, current_milli_time() - self.start_time)
-
 class InputDependentHookPoint(HookPoint):
     def __init__(self, input_dependent_postfixes_func):
         super().__init__()
@@ -602,7 +591,7 @@ class InputDependentHookedRootModule(HookedTransformer):
                 # look for any prefix-matches, if we have them we need to expand them 
                 for input_dependent_name, input_dependent_hook in self.input_dependent_hooks():
                     if name.startswith(input_dependent_name):
-                        hooks_to_expand.append(input_dependent_name)
+                        hooks_to_expand.append((input_dependent_name, input_dependent_hook))
         for name, hook in hooks_to_expand:
             for added_hook_name, added_hook in hook.add_input_dependent_hooks(input=input):
                 self.mod_dict[added_hook_name] = added_hook
@@ -610,9 +599,6 @@ class InputDependentHookedRootModule(HookedTransformer):
         self.did_setup_input_dependent_hooks = True
     
     def done_input_dependent_hooks(self):
-        self.did_setup_input_dependent_hooks = False
-        
-    def cleanup_input_dependent_hooks(self):
         for name, hook in self.input_dependent_hooks():
             for input_dependent_hook_postfix, input_dependent_hook in hook.hooks.items():
                 input_dependent_hook_name = input_dependent_hook.name
@@ -621,6 +607,7 @@ class InputDependentHookedRootModule(HookedTransformer):
                 if input_dependent_hook_name in self.hook_dict:
                     del self.hook_dict[input_dependent_hook_name]
             hook.hooks = {}
+        self.did_setup_input_dependent_hooks = False
 
         
 
@@ -646,335 +633,6 @@ def input_dependent_postfixes(input):
     for b,l in itertools.product(range(Batch), range(L)):
         postfix = make_postfix(l=l)
         yield postfix
-
-class HookedMambaBatchSplit(InputDependentHookedRootModule):
-    def __init__(self, cfg):
-        super(HookedTransformer, self).__init__()
-        self.cfg = cfg
-        D = cfg.d_model
-        E = cfg.d_inner
-        N = cfg.d_state
-        D_delta = cfg.dt_rank
-        D_conv = cfg.d_conv
-        V = cfg.vocab_size
-        
-        self.embedding = nn.Embedding(V, D)
-        self.hook_embed = HookPoint()
-        
-        self.blocks = nn.ModuleList([HookedMambaBlockBatchSplit(cfg=cfg) for _ in range(cfg.n_layers)])
-        self.norm = RMSNorm(D)
-        self.hook_norm = HookPoint() # [B,L,D]
-        self.lm_head  = nn.Linear(D, V, bias=False)
-        self.hook_logits = HookPoint() # [B,L,V]
-        
-        self.tokenizer = AutoTokenizer.from_pretrained(MODEL_TOKENIZER)
-        self.tokenizer.pad_token = self.tokenizer.eos_token
-
-        super().setup()
-    
-        
-    def forward(self, 
-        input: Union[
-            str,
-            List[str],
-            Int[torch.Tensor, "B L"],
-            Float[torch.Tensor, "B L E"],
-        ],
-        return_type: Optional[str] = "logits",
-        loss_per_token: Optional[bool] = False,
-        tokens: Optional[Int[torch.Tensor, "B L"]] = None,
-    ) -> Union[
-        None,
-        Float[torch.Tensor, "B L V"],
-        Loss,
-        Tuple[Float[torch.Tensor, "B L V"], Loss],
-    ]:
-        # make sure input is ids and not a str
-        input = tokenize_if_str(tokenizer=self.tokenizer, input=input)
-        
-        input = input.to(self.cfg.device)
-        
-        given_tokens = len(input.size()) <= 2
-        
-        if given_tokens:
-            tokens = input
-        
-        cfg = self.cfg
-        D = cfg.d_model
-        E = cfg.d_inner
-        N = cfg.d_state
-        D_delta = cfg.dt_rank
-        D_conv = cfg.d_conv
-        V = cfg.vocab_size
-        
-        Batch,L = input.size()
-
-        if given_tokens:
-            # [B,L,D]                         [B,L]
-            resid         = self.embedding(input)
-        else: #[B,L,D]      [B,L,D]
-            resid         = input
-        resid         = self.hook_embed(resid)
-        
-        for block in self.blocks:
-            # [B,L,D]         [B,L,D]
-            resid     = block(resid)
-         
-        # [B,L,D]              [B,L,D]
-        resid     = self.norm( resid )
-        resid     = self.hook_norm(resid) # [B,L,D]
-        
-        # [B,L,V]          [D->V] [B,L,D]
-        logits    = self.lm_head( resid ) # no bias
-        logits    = self.hook_logits(logits) # [B,L,V]
-        
-        if return_type is None:
-            return None
-        else:
-            if return_type == "logits":
-                return logits
-            else:
-                assert (
-                    tokens is not None
-                ), "tokens must be passed in if return_type is 'loss' or 'both'"
-                loss = self.loss_fn(logits, tokens, per_token=loss_per_token)
-                if return_type == "loss":
-                    return loss
-                elif return_type == "both":
-                    return Output(logits, loss)
-                else:
-                    logging.warning(f"Invalid return_type passed in: {return_type}")
-                    return None
-    
-    @staticmethod
-    def from_pretrained(pretrained_model_name, device='cuda'):
-        cfg, state_dict = get_converted_model_from_hf(pretrained_model_name=pretrained_model_name, device=device)
-        model = HookedMambaBatchSplit(cfg)
-        model.load_state_dict(state_dict)
-        model = model.to(device)
-        return model
-
-
-class HookedMambaBlockBatchSplit(nn.Module):
-    def __init__(self, cfg):
-        super().__init__()
-        self.cfg = cfg
-        
-        ## Variables
-        D = cfg.d_model
-        E = cfg.d_inner
-        N = cfg.d_state
-        D_delta = cfg.dt_rank
-        D_conv = cfg.d_conv
-        V = cfg.vocab_size
-        
-        
-        self.hook_resid_pre = HookPoint() # [B,L,D]
-        
-        ## Process inputs
-        self.norm      = RMSNorm(D)
-        self.hook_normalized_input = HookPoint() # [B,L,D]
-        
-        self.skip_proj = nn.Linear(D, E, bias=False)
-        self.hook_skip_proj = HookPoint() # [B,L,E]
-        self.in_proj   = nn.Linear(D, E, bias=False)
-        self.hook_in_proj = HookPoint() # [B,L,E]
-        
-        ## Conv
-        self.conv1d    = nn.Conv1d(
-            in_channels=E,
-            out_channels=E,
-            bias=True,
-            kernel_size=D_conv,
-            groups=E,
-            padding=D_conv - 1,
-        )
-        self.hook_conv = HookPoint()  # [B,L+D_conv-1,E]
-        self.hook_conv_after_cutoff = HookPoint() # [B,L,E]
-        self.hook_ssm_input = HookPoint() # [B,L,E]
-        
-        ## SSM Params
-        self.W_delta_1 = nn.Linear(E, D_delta, bias=False)
-        self.W_delta_2 = nn.Linear(D_delta, E, bias=True)
-        self.W_B = nn.Linear(E, N, bias=False)
-        self.W_C = nn.Linear(E, N, bias=False)
-        
-        self.A_log     = nn.Parameter(torch.log(torch.randn([E,N])))
-        
-        
-        self.hook_x_l = InputDependentHookPoint(input_dependent_postfixes_batch_split)   # [E], with b and l param
-        self.hook_delta_1 = InputDependentHookPoint(input_dependent_postfixes_batch_split) # [D_delta], with b and l param
-        self.hook_delta_2 = InputDependentHookPoint(input_dependent_postfixes_batch_split) # [E], with b and l param
-        self.hook_delta = InputDependentHookPoint(input_dependent_postfixes_batch_split) # [E], with b and l param
-        self.hook_A_bar = InputDependentHookPoint(input_dependent_postfixes_batch_split) # [E,N], with b and l param
-        self.hook_B = InputDependentHookPoint(input_dependent_postfixes_batch_split)     # [N], with b and l param
-        self.hook_B_bar = InputDependentHookPoint(input_dependent_postfixes_batch_split) # [E,N], with b and l param
-        self.hook_h = InputDependentHookPoint(input_dependent_postfixes_batch_split)     # [E,N], with b and l param
-        self.hook_C = InputDependentHookPoint(input_dependent_postfixes_batch_split)     # [N], with b and l param
-        self.hook_y_l = InputDependentHookPoint(input_dependent_postfixes_batch_split)   # [E], with b and l param
-        
-        self.hook_ssm_output = HookPoint() # [B,L,E]
-
-        self.W_D = nn.Parameter(torch.ones(E))
-        self.hook_after_d = HookPoint() # [B,L,E]
-        
-        self.hook_after_skip = HookPoint() # [B,L,E]
-        
-        
-        ## Project back out
-        self.out_proj  = nn.Linear(E, D, bias=False)
-        self.hook_out_proj = HookPoint() # [B,L,D]
-        self.hook_resid_post = HookPoint() # [B,L,D]
-    
-    def forward(self, resid):
-        
-        cfg = self.cfg
-        D = cfg.d_model
-        E = cfg.d_inner
-        N = cfg.d_state
-        D_delta = cfg.dt_rank
-        D_conv = cfg.d_conv
-        V = cfg.vocab_size
-        
-        Batch,L,D = resid.size()
-        
-        ###### Process inputs ######
-        resid     = self.hook_resid_pre(resid) # [B,L,D]
-        
-        # [B,L,D]             [B,L,D]
-        x         = self.norm(  resid  )
-        x         = self.hook_normalized_input(x) # [B,L,E]
-        
-        # [B,L,E]         [D->E]  [B,L,D]
-        skip      = self.skip_proj(  x  ) # no bias
-        skip      = self.hook_skip_proj(skip) # [B,L,E]
-        
-        # [B,L,E]         [D->E] [B,L,D]
-        x         = self.in_proj(  x  ) # no bias
-        x         = self.hook_in_proj(x) # [B,L,E]
-        
-        ###### Conv ######
-        # [B,E,L]
-        x         = rearrange(x, 'B L E -> B E L')
-        # [B E L]                [B,E,L]  conv1d outputs [B,E,3+L], cut off last 3
-        x         = self.conv1d(   x   )
-        # [B,L,E]
-        x         = rearrange(x, 'B E L -> B L E')
-        x = self.hook_conv(x) # [B,L+3,E]
-        x = x[:,:L,:]
-        x = self.hook_conv_after_cutoff(x) # [B,L,E]
-
-        ###### Nonlinearity  ######
-        # [B,L,E]          [B,L,E]
-        x         = F.silu(  x   )
-        x         = self.hook_ssm_input(x) # [B,L,E]
-        
-        ###### SSM ######
-       
-        self.A = -torch.exp(self.A_log)
-       
-        ys = []
-        for b in range(Batch):
-            ys_b = []
-            
-            # latent state, init to zeros
-            h = torch.zeros([E,N], device=self.cfg.device)
-            for l in range(L):
-                
-                def apply_hook(hook, value):
-                    postfix = make_postfix_batch_split(b=b, l=l)
-                    if postfix in hook.hooks:
-                        input_dependent_hook = hook.hooks[postfix]
-                        input_dependent_hook.b = b
-                        input_dependent_hook.l = l
-                        return input_dependent_hook(value)
-                    else: # not setup, maybe called forward by itself?
-                        return value
-                
-                x[b,l] = apply_hook(self.hook_x_l, x[b,l])
-                #### First, discretization: A and B -> A_bar and B_bar ####
-                ## Compute Delta ##
-                # [D_delta] [E->D_delta] [E]
-                delta1  = self.W_delta_1(x[b,l]) # no bias
-                delta1  = apply_hook(self.hook_delta_1, delta1) # [D_delta]
-                
-                # [E]     [D_delta->E] [D_delta] 
-                delta2  = self.W_delta_2(delta1) # with bias
-                delta2  = apply_hook(self.hook_delta_2, delta2) # [E]
-                
-                # [E]                [E]
-                delta  = F.softplus(delta2) 
-                delta  = apply_hook(self.hook_delta, delta) # [E]
-                
-                ## Discretize A -> A_bar ##
-                # (note [E,N]*[E,1] will first repeat the [E,1] N times so its like [E,N])
-                # [E,N]             (     [E,1]      *  [E,N] ) 
-                A_bar    = torch.exp(delta.view(E,1) * self.A)
-                A_bar    = apply_hook(self.hook_A_bar, A_bar) # [E,N]
-                
-                ## Discretize B -> B_bar ##
-                # [N]        [E->N]   [E]
-                B        = self.W_B(x[b,l]) # no bias
-                B        = apply_hook(self.hook_B, B) # [N]
-                
-                # [E,N]        [E,1]       x    [1,N]
-                B_bar    = delta.view(E,1) @ B.view(1,N)
-                B_bar = apply_hook(self.hook_B_bar, B_bar) # [E,N]
-                
-                #### Update latent vector h ####
-                ## input floats for the ssm at time l
-                # [E]       [E]
-                x_l      = x[b,l]
-                
-                ## Move ahead by one step
-                # (note, [E,N]*[E,1] will first repeat the [E,1] N times so its like [E,N])
-                # [E,N]    [E,N]  [E,N]   [E,N]      [E,1]
-                h        = A_bar *  h   + B_bar  *  x_l.view(E,1)
-                h  = apply_hook(self.hook_h, h) # [E,N]
-                
-                #### Compute output float y ####
-                ## (C matrix needed for computing y)
-                # [N]        [E->N]   [E]
-                C        = self.W_C(x[b,l]) # no bias
-                C        = apply_hook(self.hook_C, C) # [N]
-                
-                ## Output floats y at time l
-                # [E,1]      [E,N]  x   [N,1]
-                y_l      =     h    @ C.view(N,1)
-                
-                # [E]    =      [E,1]
-                y_l      =    y_l.flatten()
-                y_l = apply_hook(self.hook_y_l, y_l) # [E]
-                
-                ys_b.append([y.float() for y in y_l])
-            ys.append(ys_b)
-        # [B,L,E]
-        y = torch.tensor(ys)
-        y = self.hook_ssm_output(y) # [B,L,E]
-        
-        ###### Finish block ######
-        
-        # [B,L,E]  [B,L,E]    [B,L,E]       [E]
-        y         =   y      +   x     *  self.W_D
-        y         =  self.hook_after_d(y) # [B,L,E]
-        
-        # [B,L,E]  [B,L,E]          [B,L,E]
-        y         =   y      * F.silu(  skip  )
-        y         =  self.hook_after_skip(y) # [B,L,E]
-        
-        # [B,L,D]         [E->D]  [B,L,E]
-        y         = self.out_proj(   y   ) # no bias
-        y         = self.hook_out_proj(y) # [B,L,D]
-    
-        # [B,L,D]     [B,L,D]
-        resid     +=     y
-        resid     = self.hook_resid_post(resid) # [B,L,D]
-        
-        return resid
-
-
-def current_milli_time():
-    return round(time.time() * 1000)
 
 class HookedMamba(InputDependentHookedRootModule):
     def __init__(self, cfg):
@@ -1021,11 +679,6 @@ class HookedMamba(InputDependentHookedRootModule):
         Loss,
         Tuple[Float[torch.Tensor, "B L V"], Loss],
     ]:
-        
-        a = current_milli_time()
-        
-        
-        
         # make sure input is ids and not a str
         input = tokenize_if_str(tokenizer=self.tokenizer, input=input)
         
@@ -1207,7 +860,7 @@ class HookedMambaBlock(nn.Module):
             if warn_disabled_hooks:
                 for hook in [self.hook_conv, self.hook_conv_after_cutoff]:
                     if len(hook.fwd_hooks) > 0 or len(hook.bwd_hooks) > 0:
-                        print(f"warning: hook {hook.name} will not be called because fast_conv=True")
+                        print(f"warning: hook {hook.name} will not be called because fast_conv=True, pass warn_disabled_hooks=True to disable this warning")
 
             from causal_conv1d import causal_conv1d_fn
             # this does the silu and conv at same time
@@ -1282,7 +935,7 @@ class HookedMambaBlock(nn.Module):
             if warn_disabled_hooks:
                 for hook in inner_loop_hooks:
                     if len(hook.fwd_hooks) > 0 or len(hook.bwd_hooks) > 0:
-                        print(f"warning: hook {hook.name} will not be called because fast_ssm=True")
+                        print(f"warning: hook {hook.name} will not be called because fast_ssm=True, pass warn_disabled_hooks=True to disable this warning")
 
             # the cuda kernel is picky about shapes, rearrange things to make it happy
             
