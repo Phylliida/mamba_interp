@@ -1258,10 +1258,10 @@ def load_mamba(pretrained_model_name):
 
 
 <details>
-<summary>Optimization? This code is too slow!</summary>
+<summary>Optimization?</summary>
 
 
-Sure! First optimization, instead of computing `delta`, `A_bar`, `B_bar` and `C` inside the loop, we can compute them beforehand since they don't depend on the recurrence
+First optimization, instead of computing `delta`, `A_bar`, `B_bar` and `C` inside the loop, we can compute them beforehand since they don't depend on the recurrence
 
 Here's the forward function of a single layer, taking as input the `resid` and outputting the updated `resid`
 
