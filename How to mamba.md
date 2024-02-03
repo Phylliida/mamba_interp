@@ -1539,7 +1539,7 @@ Further Resources:
 - [Mamba as a bilinear control system](https://jsseely.com/mamba/)
 - [Minimal mamba implemention in pytorch](https://github.com/johnma2006/mamba-minimal)
 - [nnsight mamba mech interp colab](https://colab.research.google.com/drive/1he9B5anOjJSZgGsedso3PS7Xq11W-PTs?usp=sharing) (by woog)
-- [understanding SSMs in Mamba](https://colab.research.google.com/drive/1tj_RbYJQP8o3N-wrJcsWHiw75zzuh7qo#scrollTo=CzLUnA3Ipj-h) (by Gonçalo Paulo)
+- [Understanding SSMs in Mamba](https://colab.research.google.com/drive/1tj_RbYJQP8o3N-wrJcsWHiw75zzuh7qo#scrollTo=CzLUnA3Ipj-h) (by Gonçalo Paulo)
 - My [HookedMamba](https://github.com/Phylliida/mamba_interp/blob/main/mamba.py) you can use it like HookedTransformer from [TransformerLens](https://github.com/neelnanda-io/TransformerLens) (still a WIP, not officially released yet, but it does work and the interface should feel very similar to HookedTransformer)
 - My [Visualization colab](https://github.com/Phylliida/mamba_interp/blob/main/Mamba%20Visualizer.ipynb) that uses HookedMamba to let you plot intermediate activations (also includes a logit lens implementation)
 - [National Deep Inference Facility Discord](https://discord.gg/aAnwaYBkKm) (s6-interp channel)
