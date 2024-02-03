@@ -1530,3 +1530,22 @@ Sources:
 
 - Softplus image from [pytorch docs](https://pytorch.org/docs/stable/generated/torch.nn.Softplus.html)
 - Much of this code is modified from [mamba-minimal](https://github.com/johnma2006/mamba-minimal)
+- Official mamba implementation at [https://github.com/state-spaces/mamba](https://github.com/state-spaces/mamba)
+
+Further Resources:
+- [Mamba paper](https://arxiv.org/abs/2312.00752)
+- [Mamba interp brainstorming document](https://docs.google.com/spreadsheets/d/1vpjpiggrK0i0dem59lxR2GrwpAyI-WJ0T-BNj6tPEUw/edit)
+- [Extracting attention maps from mamba](https://github.com/JadenFiotto-Kaufman/s6_interp/blob/master/attention.py) [See some examples here](https://baulab.us/u/jadenfk/)
+- [Mamba as a bilinear control system](https://jsseely.com/mamba/)
+- [Minimal mamba implemention in pytorch](https://github.com/johnma2006/mamba-minimal)
+- [nnsight mamba mech interp colab](https://colab.research.google.com/drive/1he9B5anOjJSZgGsedso3PS7Xq11W-PTs?usp=sharing) (by woog)
+- [understanding SSMs in Mamba](https://colab.research.google.com/drive/1tj_RbYJQP8o3N-wrJcsWHiw75zzuh7qo#scrollTo=CzLUnA3Ipj-h) (by Gonçalo Paulo)
+- My [HookedMamba](https://github.com/Phylliida/mamba_interp/blob/main/mamba.py) you can use it like HookedTransformer from [TransformerLens](https://github.com/neelnanda-io/TransformerLens) (still a WIP, not officially released yet, but it does work and the interface should feel very similar to HookedTransformer)
+- My [Visualization colab](https://github.com/Phylliida/mamba_interp/blob/main/Mamba%20Visualizer.ipynb) that uses HookedMamba to let you plot intermediate activations (also includes a logit lens implementation)
+- [National Deep Inference Facility Discord](https://discord.gg/aAnwaYBkKm) (s6-interp channel)
+- [Mechanistic Interpretability Group Discord](https://discord.gg/WW5jV38Rwt) (mamba-interp channel, also when browing mamba-interp, click on threads in the top right and see the math subthread)
+- [Eleuther AI Discord](https://discordapp.com/channels/@me/945472058513567824/1171127049432342629) (rnn-interp channel and its threads)
+
+Credits:
+- Thanks to Adrià Garriga-Alonso, Gonçalo Paulo, Jaden Fiotto, woog, helpful disussions
+- Thanks to [MATS](https://www.matsprogram.org/) for funding and office space
