@@ -827,15 +827,15 @@ class RMSNorm(nn.Module):
 #### Params ####
 
 class Mamba(nn.Module):
-    def __init__(self, args):
+    def __init__(self, cfg):
         super().__init__()
-        self.args = args
-        D = args.d_model
-        E = args.d_inner
-        N = args.d_state
-        D_delta = args.dt_rank
-        D_conv = args.d_conv
-        V = args.vocab_size
+        self.cfg = cfg
+        D = cfg.D
+        E = cfg.E
+        N = cfg.N
+        D_delta = cfg.D_delta
+        D_conv = cfg.D_conv
+        V = cfg.V
         
         self.embedding = nn.Embedding(V, D)
         self.layers = nn.ModuleList([MambaLayer(args=args) for _ in range(args.n_layer)])
@@ -848,12 +848,12 @@ class MambaLayer(nn.Module):
         self.args = args
         
         ## Variables
-        D = args.d_model
-        E = args.d_inner
-        N = args.d_state
-        D_delta = args.dt_rank
-        D_conv = args.d_conv
-        V = args.vocab_size
+        D = cfg.D
+        E = cfg.E
+        N = cfg.N
+        D_delta = cfg.D_delta
+        D_conv = cfg.D_conv
+        V = cfg.V
         
         ## Process inputs
         self.norm      = RMSNorm(D)
@@ -890,13 +890,13 @@ class MambaLayer(nn.Module):
 ```python
 def run_mamba(mamba, input_ids):
 
-    args = mamba.args
-    D = args.d_model
-    E = args.d_inner
-    N = args.d_state
-    D_delta = args.dt_rank
-    D_conv = args.d_conv
-    V = args.vocab_size
+    cfg = mamba.cfg
+    D = cfg.D
+    E = cfg.E
+    N = cfg.N
+    D_delta = cfg.D_delta
+    D_conv = cfg.D_conv
+    V = cfg.V
     
     Batch,L = input_ids.size()
 
@@ -1020,13 +1020,13 @@ def run_mamba(mamba, input_ids):
 ```python
 def run_mamba(mamba, input_ids):
 
-    args = mamba.args
-    D = args.d_model
-    E = args.d_inner
-    N = args.d_state
-    D_delta = args.dt_rank
-    D_conv = args.d_conv
-    V = args.vocab_size
+    cfg = mamba.cfg
+    D = cfg.D
+    E = cfg.E
+    N = cfg.N
+    D_delta = cfg.D_delta
+    D_conv = cfg.D_conv
+    V = cfg.V
     
     Batch,L = input_ids.size()
 
@@ -1144,9 +1144,9 @@ import json
 import math
 
 @dataclass
-class ModelArgs:
+class ModelCfg:
     d_model: int
-    n_layer: int
+    n_layers: int
     vocab_size: int
     d_state: int = 16
     expand: int = 2
@@ -1155,6 +1155,10 @@ class ModelArgs:
     pad_vocab_size_multiple: int = 8
     conv_bias: bool = True
     bias: bool = False
+    default_prepend_bos: bool = True
+    tokenizer_prepends_bos: bool = False
+    n_ctx: int = 2048
+    device: Union[torch.device,str] = 'cuda'
     
     def __post_init__(self):
         self.d_inner = int(self.expand * self.d_model)
@@ -1165,6 +1169,25 @@ class ModelArgs:
         if self.vocab_size % self.pad_vocab_size_multiple != 0:
             self.vocab_size += (self.pad_vocab_size_multiple
                                 - self.vocab_size % self.pad_vocab_size_multiple)
+    
+    @property
+    def D(self):
+        return self.d_model
+    @property
+    def E(self):
+        return self.d_inner
+    @property
+    def N(self):
+        return self.d_state
+    @property
+    def D_delta(self):
+        return self.dt_rank
+    @property
+    def D_conv(self):
+        return self.d_conv
+    @property
+    def V(self):
+        return self.vocab_size
 
 from transformers.utils import WEIGHTS_NAME, CONFIG_NAME
 from transformers.utils.hub import cached_file
@@ -1182,19 +1205,19 @@ def load_mamba(pretrained_model_name):
         return torch.load(resolved_archive_file, weights_only=True, map_location='cpu', mmap=True)
         
     config_data = load_config_hf(pretrained_model_name)
-    args = ModelArgs(
+    cfg = ModelCfg(
         d_model=config_data['d_model'],
         n_layer=config_data['n_layer'],
         vocab_size=config_data['vocab_size']
     )
-    D = args.d_model
-    E = args.d_inner
-    N = args.d_state
-    D_delta = args.dt_rank
-    D_conv = args.d_conv
-    V = args.vocab_size
+    D = cfg.D
+    E = cfg.E
+    N = cfg.N
+    D_delta = cfg.D_delta
+    D_conv = cfg.D_conv
+    V = cfg.V
     
-    model = Mamba(args)
+    model = Mamba(cfg)
     
     state_dict = load_state_dict_hf(pretrained_model_name)
     new_state_dict = {}
@@ -1231,6 +1254,276 @@ def load_mamba(pretrained_model_name):
 
 
 </details>
+</details>
+
+
+<details>
+<summary>Optimization? This code is too slow!</summary>
+
+
+Sure! First optimization, instead of computing `delta`, `A_bar`, `B_bar` and `C` inside the loop, we can compute them beforehand since they don't depend on the recurrence
+
+Here's the forward function of a single layer, taking as input the `resid` and outputting the updated `resid`
+
+```python
+def forward(self, resid):
+    cfg = self.cfg
+    D = cfg.d_model
+    E = cfg.d_inner
+    N = cfg.d_state
+    D_delta = cfg.dt_rank
+    D_conv = cfg.d_conv
+    V = cfg.vocab_size
+    
+    Batch,L,D = resid.size()
+    
+    ###### Process inputs ######
+    # [B,L,D]             [B,L,D]
+    resid_norm = self.norm(  resid  )
+    
+    # [B,L,E]          [D->E]     [B,L,D]
+    skip       = self.skip_proj( resid_norm ) # no bias
+    
+    # [B,L,E]          [D->E]   [B,L,D]
+    x_in       = self.in_proj( resid_norm ) # no bias
+    
+    ###### Conv ######
+    # [B,E,L]
+    x_conv     = rearrange(x_in, 'B L E -> B E L')
+    # [B,E,L+3]                 [B,E,L]  conv1d outputs [B,E,3+L], cut off last 3
+    x_conv_out = self.conv1d(   x_conv   )
+    # [B,L+3,E]            [B,E,L+3]
+    x_conv_out = rearrange(x_conv_out, 'B E L -> B L E')
+    # [B,L,E]
+    x_conv_out_cutoff = x_conv_out[:,:L,:]
+
+    ###### Nonlinearity  ######
+    # [B,L,E]               [B,L,E]
+    x         = F.silu( x_conv_out_cutoff )
+    
+    ###### SSM ######
+   
+    self.A = -torch.exp(self.A_log)
+   
+    ys = []
+   
+    # latent state, init to zeros
+    h = torch.zeros([Batch,E,N], device=self.cfg.device)
+    h = self.hook_h_start(h) 
+    
+    ### Compute the delta, A_bar, B_bar, and C ahead of time,
+    ### since none of them depend on h
+    
+    ## Compute Delta ##
+    # [B,L,D_delta] [E->D_delta]  [B,E]
+    delta_1        = self.W_delta_1( x ) # no bias
+    
+    # [B,L,E]         [D_delta->E] [B,L,D_delta] 
+    delta_2        = self.W_delta_2(  delta_1  ) # with bias
+
+    # [B,L,N]     [E->N]   [B,L,E]
+    B           = self.W_B(   x   )
+
+    ## C
+    # this just applies E->N projection to each E-sized vector
+    # [B,L,N]      [E->N]  [B,L,E]     
+    C           = self.W_C(   x   ) # no bias
+
+    # [B,L,E]           [B,L,E]
+    delta  = F.softplus(delta_2) 
+    
+    ## Discretize A
+    # [B,L,E,N]                    [B,L,E] [E,N]
+    A_bar       = torch.exp(einsum(delta, self.A, 'b l e, e n -> b l e n'))
+    
+    ## Discretize B (also, multiply by x ahead of time)
+    # [B,L,E,N]          [B,L,E]  [B,L,N] 
+    B_bar       = einsum( delta,    B,     'b l e, b l n -> b l e n')
+    
+    # Now we do the recurrence
+    ys = []
+    
+    h = torch.zeros([Batch,E,N], device=self.cfg.device)
+    for l in range(L):
+        # [B,E,N]   [B,E,N]     [B,E,N]          [B,E,N]          [B,E,1]
+        h        =    h    *  A_bar[:,l,:,:]  + B_bar[:,l,:,:] * x[:,l].view(Batch, E, 1)
+        
+        # [B,E]    [B,E,N]       [B,N,1]   # this is like [E,N] x [N,1] for each batch
+        y_l       =   h     @   C[:,l,:].view(Batch,N,1)
+        # [B,E]              [B,E,1]
+        y_l      =    y_l.view(Batch,E)
+        ys.append(y_l)
+        
+    # we have lots of [B,E]
+    # we need to stack them along the 1 dimension to get [B,L,E]
+    y = torch.stack(ys, dim=1)
+    
+    ###### Finish block ######
+    
+    # [B,L,E]  [B,L,E]    [B,L,E]       [E]
+    y_apply_D =   y      +   x     *  self.W_D
+        
+    # [B,L,E]   [B,L,E]             [B,L,E]
+    y_skip    = y_apply_D * F.silu(  skip  )
+        
+    # [B,L,D]         [E->D]   [B,L,E]
+    y_out     = self.out_proj( y_skip ) # no bias
+
+    # [B,L,D]      [B,L,D]   [B,L,D]
+    resid     = resid +  y_out
+    
+    return resid
+```
+
+Next, we can use special kernels they made. There's two kernels, `causal_conv_fn` for the conv1d and `selective_scan_cuda` for the inner ssm loop.
+
+To use `causal_conv_fn`, from [https://github.com/Dao-AILab/causal-conv1d](https://github.com/Dao-AILab/causal-conv1d)
+
+```
+pip install causal_conv1d 
+```
+
+Now inside our layer's forward, we can replace this code:
+
+```python
+    # [B,E,L]
+    x_conv     = rearrange(x_in, 'B L E -> B E L')
+    # [B,E,L+3]                 [B,E,L]  conv1d outputs [B,E,3+L], cut off last 3
+    x_conv_out = self.conv1d(   x_conv   )
+    # [B,L+3,E]            [B,E,L+3]
+    x_conv_out = rearrange(x_conv_out, 'B E L -> B L E')
+    # [B,L,E]
+    x_conv_out_cutoff = x_conv_out[:,:L,:]
+
+    ###### Nonlinearity  ######
+    # [B,L,E]               [B,L,E]
+    x         = F.silu( x_conv_out_cutoff )
+```
+
+With this
+
+```python
+    # [B,E,L]
+    x_conv     = rearrange(x_in, 'B L E -> B E L')
+    
+    from causal_conv1d import causal_conv1d_fn
+    
+    # this does the silu and conv at same time
+    # [B,E,L]
+    x_conv_out = causal_conv1d_fn(
+        x=x_conv,
+        weight=rearrange(self.conv1d.weight, "d 1 w -> d w"),
+        bias=self.conv1d.bias,
+        activation="silu",
+    )
+    
+    # [B,L,E]
+    x         = rearrange(x_conv_out, 'B E L -> B L E')
+```
+
+To use `selective_scan_cuda`, clone [the mamba repo](https://github.com/state-spaces/mamba) and install it
+
+```
+git clone https://github.com/state-spaces/mamba
+cd mamba
+pip install -e .
+``` 
+
+Now inside our forward, we can replace this
+
+```python
+    # [B,L,E]           [B,L,E]
+    delta  = F.softplus(delta_2) 
+    
+    ## Discretize A
+    # [B,L,E,N]                    [B,L,E] [E,N]
+    A_bar       = torch.exp(einsum(delta, self.A, 'b l e, e n -> b l e n'))
+    
+    ## Discretize B (also, multiply by x ahead of time)
+    # [B,L,E,N]          [B,L,E]  [B,L,N] 
+    B_bar       = einsum( delta,    B,     'b l e, b l n -> b l e n')
+    
+    # Now we do the recurrence
+    ys = []
+    
+    h = torch.zeros([Batch,E,N], device=self.cfg.device)
+    for l in range(L):
+        # [B,E,N]   [B,E,N]     [B,E,N]          [B,E,N]          [B,E,1]
+        h        =    h    *  A_bar[:,l,:,:]  + B_bar[:,l,:,:] * x[:,l].view(Batch, E, 1)
+        
+        # [B,E]    [B,E,N]       [B,N,1]   # this is like [E,N] x [N,1] for each batch
+        y_l       =   h     @   C[:,l,:].view(Batch,N,1)
+        # [B,E]              [B,E,1]
+        y_l      =    y_l.view(Batch,E)
+        ys.append(y_l)
+        
+    # we have lots of [B,E]
+    # we need to stack them along the 1 dimension to get [B,L,E]
+    y = torch.stack(ys, dim=1)
+    
+    ###### Finish block ######
+    
+    # [B,L,E]  [B,L,E]    [B,L,E]       [E]
+    y_apply_D =   y      +   x     *  self.W_D
+        
+    # [B,L,E]   [B,L,E]             [B,L,E]
+    y_skip    = y_apply_D * F.silu(  skip  )
+```
+
+with this
+
+```python
+    import selective_scan_cuda
+
+    # the cuda kernel is picky about shapes, rearrange things to make it happy
+    
+    # [B,E,L]
+    skip_ssm_input = rearrange(skip, "B L E -> B E L")
+    # [B,E,L]
+    x_ssm_input = rearrange(x, "B L E -> B E L")
+    # [B,E,L]
+    delta_2_ssm_input = rearrange(delta_2, 'B L E -> B E L')
+    # [B,1,N,L]
+    B_ssm_input = rearrange(B, 'B L N -> B 1 N L')
+    # [B,1,N,L]
+    C_ssm_input = rearrange(C, "B L N -> B 1 N L")
+
+    # hack because we applied bias above when computing delta_2
+    # it's a little slower but that's ok
+    if not hasattr(self, "empty_bias"):
+        self.empty_bias = torch.zeros(self.W_delta_2.bias.size(), device=self.cfg.device)
+
+    # this does softplus(delta), discretization, inner loop, add x*D, and multiply softplus(skip)
+    # all the stuff you see in the else clause below 
+    y_apply_D_ssm_output, scan_intermediates, y_skip_ssm_output = selective_scan_cuda.fwd(
+                            x_ssm_input.contiguous(), # u
+                            delta_2_ssm_input.contiguous(), # delta
+                            self.A.contiguous(), # A 
+                            B_ssm_input.contiguous(), # B
+                            C_ssm_input.contiguous(), # C
+                            self.W_D.float(), # D
+                            skip_ssm_input.contiguous(), # z
+                            self.empty_bias, # delta_bias
+                            True) # delta_softplus
+    
+    
+    # if you wanted to compute y_skip using y_apply_D_ssm_output, this is what you'd do
+    # [B,L,E]
+    # y_apply_D = rearrange(y_apply_D_ssm_output, "B E L -> B L E")
+    # [B,L,E]   [B,L,E]             [B,L,E]
+    # y_skip    = y_apply_D * F.silu(  skip  )
+    
+    # but we'll just use y_skip_ssm_output which has already done this for us
+    # [B,L,E]
+    y_skip = rearrange(y_skip_ssm_output, "B E L -> B L E")
+```
+
+The details of these optimizations can be found in the [paper](https://arxiv.org/pdf/2312.00752.pdf) appendix D.
+
+This implemention does not include the backwards pass, which had to be [computed manually](https://github.com/state-spaces/mamba/blob/main/mamba_ssm/ops/selective_scan_interface.py#L50).
+
+TODO: add that (if you need backwards, look at the [mamba source code](https://github.com/state-spaces/mamba/blob/main/mamba_ssm/ops/selective_scan_interface.py#L50))
+
 </details>
 
 Sources:
