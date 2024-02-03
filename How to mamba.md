@@ -1336,7 +1336,7 @@ def forward(self, resid):
     # [B,L,E,N]                    [B,L,E] [E,N]
     A_bar       = torch.exp(einsum(delta, self.A, 'b l e, e n -> b l e n'))
     
-    ## Discretize B (also, multiply by x ahead of time)
+    ## Discretize B
     # [B,L,E,N]          [B,L,E]  [B,L,N] 
     B_bar       = einsum( delta,    B,     'b l e, b l n -> b l e n')
     
