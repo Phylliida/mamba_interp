@@ -1550,13 +1550,43 @@ $$\stackrel{[B,L,D]}{y_{out}} = \stackrel{[B,L,E]}{y_{skip}} \stackrel{[E,D]}{W_
 
 $$\stackrel{[B,L,D]}{resid} += \stackrel{[B,L,D]}{y_{out}}$$
 
-Then after all layers have added to the residual stream, we have
+Expanding this out, we get:
 
-$$\stackrel{[B,L,D]}{resid_{normed}} = norm(\stackrel{[B,L,D]}{resid})
+$$\stackrel{[B,L,D]}{y_{out}} = \stackrel{[B,L,E]}{y_{skip}} \stackrel{[E,D]}{W_O}$$
 
-where `norm` divides each `D`-sized vector by its 2-norm, and then multiplies by a weight param:
+$$\stackrel{[B,L,D]}{y_{out}} = \stackrel{[B,L,E]}{y_{ssm}} * \stackrel{[B,L,E]}{skip} \stackrel{[E,D]}{W_O}$$
+
+$$\stackrel{[B,L,D]}{y_{out}} = (\stackrel{[B,L,E]}{y} + \stackrel{[B,L,E]}{x} \stackrel{[E]}{W_D}) * \stackrel{[B,L,E]}{skip} \stackrel{[E,D]}{W_O}$$
+
+$$\stackrel{[B,L,D]}{y_{out}} = \stackrel{[B,L,E]}{y} \stackrel{[B,L,E]}{skip} \stackrel{[E,D]}{W_O} + \stackrel{[B,L,E]}{x} \stackrel{[E]}{W_D} \stackrel{[B,L,E]}{skip} \stackrel{[E,D]}{W_O} $$
+
+Since at each layer, we just do
+
+$$\stackrel{[B,L,D]}{resid} += \stackrel{[B,L,D]}{y_{out}}$$
+
+We can write our residual stream as a sum over the y_outs for every layer (adding a super^{script} i for the layer)
+
+$$\stackrel{[B,L,D]}{resid_{final}} = \sum_{i=1}^{Layers} \stackrel{[B,L,E]}{y_{out}^i} $$
+
+$$\stackrel{[B,L,D]}{resid_{final}} = \sum_{i=1}^{Layers} \stackrel{[B,L,E]}{y^i} \stackrel{[B,L,E]}{{skip}^i} \stackrel{[E,D]}{W_O^i} + \stackrel{[B,L,E]}{x^i} \stackrel{[E]}{W_D^i} \stackrel{[B,L,E]}{{skip}^i} \stackrel{[E,D]}{W_O^i}$$
+
+After we do this, to compute our logits we do
+
+Norm:
+
+$$\stackrel{[B,L,D]}{resid_{normed}} = norm(\stackrel{[B,L,D]}{resid_{final}})$$
+
+Unembed matrix:
+
+$$\stackrel{[B,L,V]}{logits} = \stackrel{[B,L,D]}{resid_{normed}} \stackrel{[D,V]}{W_{U}}$$
+
+The unembed matrix is easy to expand out, but the norm is a little tricky.
+
+As a reminder, `norm` divides each `D`-sized vector by its 2-norm, and then multiplies by a weight param:
 
 $$norm(x) = \stackrel{[D]}{W_N}\stackrel{[B,L,D]}{x}/\stackrel{[B,L]}{\Vert x \Vert}$$
+
+(where 2-norm of a, i.e., $$\Vert a \Vert$$ just means $$\sqrt{a \cdot a}$$ where $\cdot$ means dot product)
 
 If you are confused by the dimensions, just imagine they are repeated along the missing axes like this:
 
@@ -1568,8 +1598,86 @@ We'd like to expand norm out. For simplicity, lets first set B=1 and L=1 and con
 
 $$norm(a+b) = \stackrel{[D]}{W_N} \frac{\stackrel{[D]}{a} + \stackrel{[D]}{b}}{\stackrel{[1]}{\Vert a - b \Vert}}$$
 
+Which we can write as
+
+$$\stackrel{[D]}{W_N} \frac{\stackrel{[D]}{a}}{\stackrel{[1]}{\Vert a - b \Vert}} + \stackrel{[D]}{W_N} \frac{\stackrel{[D]}{b}}{\stackrel{[1]}{\Vert a - b \Vert}}$$
+
+Unfortunately there isn't an easy way to expand $\stackrel{[1]}{\Vert a - b \Vert}$, but that's ok, we can just treat that as a constant.
+
+So lets call $$\stackrel{[B,L]}{divmag} = \frac{1}{\stackrel{[B,L]}{\Vert resid_{final} \Vert}}$$
+
+Except for clarity, lets just repeat it along the `D` axis, giving us $$\stackrel{[B,L,D]}{divmag}$$
+
+Which means (also repeating W_N along the L and D axis for clarity)
+
+$$\stackrel{[B,L,D]}{resid_{normed}} = norm(\stackrel{[B,L,D]}{resid_{final}})$$
+
+$$\stackrel{[B,L,D]}{resid_{normed}} = \stackrel{[B,L,D]}{resid_{final}}\stackrel{[B,L,D]}{divmag}\stackrel{[B,L,D]}{W_N}$$
+
+That lets us write
+
+$$\stackrel{[B,L,V]}{logits} = \stackrel{[B,L,D]}{resid_{normed}} \stackrel{[D,V]}{W_{U}}$$
+
+$$\stackrel{[B,L,V]}{logits} = norm(\stackrel{[B,L,D]}{resid_{final}}) \stackrel{[D,V]}{W_{U}}$$
+
+$$\stackrel{[B,L,V]}{logits} = \stackrel{[B,L,D]}{resid_{final}}\stackrel{[B,L,D]}{divmag}\stackrel{[B,L,D]}{W_N}\stackrel{[D,V]}{W_{U}}$$
+
+$$\stackrel{[B,L,V]}{logits} = \Big(\sum_{i=1}^{Layers} \stackrel{[B,L,E]}{y^i} \stackrel{[B,L,E]}{{skip}^i} \stackrel{[E,D]}{W_O^i} + \stackrel{[B,L,E]}{x^i} \stackrel{[E]}{W_D^i} \stackrel{[B,L,E]}{{skip}^i} \stackrel{[E,D]}{W_O^i}\Big) \stackrel{[B,L,D]}{divmag}\stackrel{[B,L,D]}{W_N}\stackrel{[D,V]}{W_{U}}$$
+
+$$\stackrel{[B,L,V]}{logits} = \sum_{i=1}^{Layers} \stackrel{[B,L,E]}{y^i} \stackrel{[B,L,E]}{{skip}^i} \stackrel{[E,D]}{W_O^i}\stackrel{[B,L,D]}{divmag}\stackrel{[B,L,D]}{W_N}\stackrel{[D,V]}{W_{U}} + \stackrel{[B,L,E]}{x^i} \stackrel{[E]}{W_D^i} \stackrel{[B,L,E]}{{skip}^i} \stackrel{[E,D]}{W_O^i}\stackrel{[B,L,D]}{divmag}\stackrel{[B,L,D]}{W_N}\stackrel{[D,V]}{W_{U}}$$
+
+Each term in this sum is of size `V` and shows the contribution of the layer to the logits.
+
+A sidenote on weighted sums:
+
+Say we have 
+
+$$\stackrel{[1]}{a} + \sum_{n=1}^N \stackrel{[1]}{w_n}\stackrel{[1]}{b_n}$$
+
+We can write this as
+
+$$\Big(\frac{\sum^N_{n=1} \stackrel{[1]}{w_n}\stackrel{[1]}{a}}{\sum^N_{n=1} \stackrel{[1]}{w_n}}\Big) + \Big(\sum^N_{n=1} \stackrel{[1]}{w_n} \stackrel{[1]}{b_n} \Big)$$
 
 
+We can split this up further by looking at the definition of $y^i$.
+
+Because the size of h is $\stackrel{[B,L,E,N]}{h}$ and
+
+$$\stackrel{[B,L,N]}{C^i} = \stackrel{[B,L,E]}{x^i} \stackrel{[E,N]}{W_C^i}$$ 
+
+$$\stackrel{[B,L,E,1]}{y^i} = \stackrel{[B,L,E,N]}{h^i}\stackrel{[B,L,N,1]}{C^i}$$
+
+(a ExN matrix times a Nx1 matrix = a Ex1 matrix)
+
+Lets write this element-wise
+
+$$\stackrel{[1]}{y^i[b,\ell,e]} = \stackrel{[N]}{h^i[b,\ell,e]} \cdot \stackrel{[N]}{C^i[b,\ell]}$$
+
+#### Having N E-sized h vectors perspective:
+
+$$\stackrel{[1]}{y^i[b,\ell,e]} = \stackrel{[N]}{h^i[b,\ell,e]} \cdot \stackrel{[N]}{C^i[b,\ell]}$$
+
+Which can be written
+
+$$\stackrel{[E]}{y^i[b,\ell,:]} = \sum_{n=1}^N \stackrel{[1]}{C^i[b,\ell,n]} \stackrel{[E]}{h^i[b,\ell,:,n]}$$
+
+In this way we can see that $y^i$ is really a weighted sum of $N$ different $E$-sized vectors.
+
+Thus we can write
+
+$$\stackrel{[B,L,V]}{logits} = \sum_{i=1}^{Layers} \stackrel{[B,L,E]}{y^i} \stackrel{[B,L,E]}{{skip}^i} \stackrel{[E,D]}{W_O^i}\stackrel{[B,L,D]}{divmag}\stackrel{[B,L,D]}{W_N}\stackrel{[D,V]}{W_{U}} + \stackrel{[B,L,E]}{x^i} \stackrel{[E]}{W_D^i} \stackrel{[B,L,E]}{{skip}^i} \stackrel{[E,D]}{W_O^i}\stackrel{[B,L,D]}{divmag}\stackrel{[B,L,D]}{W_N}\stackrel{[D,V]}{W_{U}}$$
+
+as (using the sidenote on weighted sums from above, and let $$\stackrel{[B,L]}{C^i_{sum}} = \sum^N_{n=1} \stackrel{[B,L]}{C[:,:,n]}$$)
+
+$$\stackrel{[B,L,V]}{logits} = \sum_{i=1}^{Layers} \sum^N_{n=1} \stackrel{[B,L,1]}{C^i[:,:,n]} \stackrel{[B,L,E]}{h^i[:,:,:,n]} \stackrel{[B,L,E]}{{skip}^i} \stackrel{[E,D]}{W_O^i}\stackrel{[B,L,D]}{divmag}\stackrel{[B,L,D]}{W_N}\stackrel{[D,V]}{W_{U}} + \frac{\stackrel{[B,L,1]}{C^i[:,:,n]}\stackrel{[B,L,E]}{x^i}}{\stackrel{[B,L,1]}{C^i_{sum}}} \stackrel{[E]}{W_D^i} \stackrel{[B,L,E]}{{skip}^i} \stackrel{[E,D]}{W_O^i}\stackrel{[B,L,D]}{divmag}\stackrel{[B,L,D]}{W_N}\stackrel{[D,V]}{W_{U}}$$
+
+#### Having E N-sized h vectors perspective:
+
+TODO
+
+#### Having ExN 1-sized h vectors perspective:
+
+TODO
 
 </details>
 
