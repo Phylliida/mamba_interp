@@ -1526,6 +1526,55 @@ TODO: add that (if you need backwards, look at the [mamba source code](https://g
 
 </details>
 
+<details>
+<summary>Direct Logit Attribution</summary>
+
+As a reminder (example values from mamba-370m)
+
+```python
+B = Batch = batch size
+L = context len
+D = d_model = 1024
+E = d_inner = d_in = 2048
+N = d_state = 16
+V = vocab_size = 50280
+```
+
+So, for each layer we have this: (where `y` is the output of the inner ssm loop)
+
+$$\stackrel{[B,L,E]}{y_{ssm}} = \stackrel{[B,L,E]}{y} + \stackrel{[B,L,E]}{x} \stackrel{[E]}{W_D}$$
+
+$$\stackrel{[B,L,E]}{y_{skip}} = \stackrel{[B,L,E]}{y_{ssm}} * \stackrel{[B,L,E]}{skip}$$
+
+$$\stackrel{[B,L,D]}{y_{out}} = \stackrel{[B,L,E]}{y_{skip}} \stackrel{[E,D]}{W_O}$$
+
+$$\stackrel{[B,L,D]}{resid} += \stackrel{[B,L,D]}{y_{out}}$$
+
+Then after all layers have added to the residual stream, we have
+
+$$\stackrel{[B,L,D]}{resid_{normed}} = norm(\stackrel{[B,L,D]}{resid})
+
+where `norm` divides each `D`-sized vector by its 2-norm, and then multiplies by a weight param:
+
+$$norm(x) = \stackrel{[D]}{W_N}\stackrel{[B,L,D]}{x}/\stackrel{[B,L]}{\Vert x \Vert}$$
+
+If you are confused by the dimensions, just imagine they are repeated along the missing axes like this:
+
+$$norm(x) = \stackrel{[B,L,D]}{W_N}\stackrel{[B,L,D]}{x}/\stackrel{[B,L,D]}{\Vert x \Vert}$$
+
+And then we can do element-wise multiply.
+
+We'd like to expand norm out. For simplicity, lets first set B=1 and L=1 and consider two $\stackrel{[D]}{a}$, $\stackrel{[D]}{b}$. We have
+
+$$norm(a+b) = \stackrel{[D]}{W_N} \frac{\stackrel{[D]}{a} + \stackrel{[D]}{b}}{\stackrel{[1]}{\Vert a - b \Vert}}$$
+
+
+
+
+</details>
+
+
+
 Sources:
 
 - Softplus image from [pytorch docs](https://pytorch.org/docs/stable/generated/torch.nn.Softplus.html)
