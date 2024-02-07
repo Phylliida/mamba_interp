@@ -1544,7 +1544,7 @@ So, for each layer we have this: (where `y` is the output of the inner ssm loop)
 
 $$\stackrel{[B,L,E]}{y_{ssm}} = \stackrel{[B,L,E]}{y} + \stackrel{[B,L,E]}{x} \stackrel{[E]}{W_D}$$
 
-$$\stackrel{[B,L,E]}{y_{skip}} = \stackrel{[B,L,E]}{y_{ssm}} * \stackrel{[B,L,E]}{skip}$$
+$$\stackrel{[B,L,E]}{y_{skip}} = \stackrel{[B,L,E]}{y_{ssm}} * \stackrel{[B,L,E]}{silu(skip)}$$
 
 $$\stackrel{[B,L,D]}{y_{out}} = \stackrel{[B,L,E]}{y_{skip}} \stackrel{[E,D]}{W_O}$$
 
@@ -1554,11 +1554,11 @@ Expanding this out, we get:
 
 $$\stackrel{[B,L,D]}{y_{out}} = \stackrel{[B,L,E]}{y_{skip}} \stackrel{[E,D]}{W_O}$$
 
-$$\stackrel{[B,L,D]}{y_{out}} = \stackrel{[B,L,E]}{y_{ssm}} * \stackrel{[B,L,E]}{skip} \stackrel{[E,D]}{W_O}$$
+$$\stackrel{[B,L,D]}{y_{out}} = \stackrel{[B,L,E]}{y_{ssm}} * \stackrel{[B,L,E]}{silu(skip)} \stackrel{[E,D]}{W_O}$$
 
-$$\stackrel{[B,L,D]}{y_{out}} = (\stackrel{[B,L,E]}{y} + \stackrel{[B,L,E]}{x} \stackrel{[E]}{W_D}) * \stackrel{[B,L,E]}{skip} \stackrel{[E,D]}{W_O}$$
+$$\stackrel{[B,L,D]}{y_{out}} = (\stackrel{[B,L,E]}{y} + \stackrel{[B,L,E]}{x} \stackrel{[E]}{W_D}) * \stackrel{[B,L,E]}{silu(skip)} \stackrel{[E,D]}{W_O}$$
 
-$$\stackrel{[B,L,D]}{y_{out}} = \stackrel{[B,L,E]}{y} \stackrel{[B,L,E]}{skip} \stackrel{[E,D]}{W_O} + \stackrel{[B,L,E]}{x} \stackrel{[E]}{W_D} \stackrel{[B,L,E]}{skip} \stackrel{[E,D]}{W_O} $$
+$$\stackrel{[B,L,D]}{y_{out}} = \stackrel{[B,L,E]}{y} \stackrel{[B,L,E]}{silu(skip)} \stackrel{[E,D]}{W_O} + \stackrel{[B,L,E]}{x} \stackrel{[E]}{W_D} \stackrel{[B,L,E]}{silu(skip)} \stackrel{[E,D]}{W_O} $$
 
 Since at each layer, we just do
 
@@ -1566,9 +1566,9 @@ $$\stackrel{[B,L,D]}{resid} += \stackrel{[B,L,D]}{y_{out}}$$
 
 We can write our residual stream as a sum over the y_outs for every layer (adding a super^{script} i for the layer)
 
-$$\stackrel{[B,L,D]}{resid_{final}} = \sum_{i=1}^{Layers} \stackrel{[B,L,E]}{y_{out}^i} $$
+$$\stackrel{[B,L,D]}{resid_{final}} = embed(\stackrel{[B,L]}{input}) + \sum_{i=1}^{Layers} \stackrel{[B,L,E]}{y_{out}^i} $$
 
-$$\stackrel{[B,L,D]}{resid_{final}} = \sum_{i=1}^{Layers} \stackrel{[B,L,E]}{y^i} \stackrel{[B,L,E]}{{skip}^i} \stackrel{[E,D]}{W_O^i} + \stackrel{[B,L,E]}{x^i} \stackrel{[E]}{W_D^i} \stackrel{[B,L,E]}{{skip}^i} \stackrel{[E,D]}{W_O^i}$$
+$$\stackrel{[B,L,D]}{resid_{final}} = embed(\stackrel{[B,L]}{input}) + \sum_{i=1}^{Layers} \stackrel{[B,L,E]}{y^i} \stackrel{[B,L,E]}{{skip}^i} \stackrel{[E,D]}{W_O^i} + \stackrel{[B,L,E]}{x^i} \stackrel{[E]}{W_D^i} \stackrel{[B,L,E]}{{skip}^i} \stackrel{[E,D]}{W_O^i}$$
 
 After we do this, to compute our logits we do
 
@@ -1622,9 +1622,9 @@ $$\stackrel{[B,L,V]}{logits} = norm(\stackrel{[B,L,D]}{resid_{final}}) \stackrel
 
 $$\stackrel{[B,L,V]}{logits} = \stackrel{[B,L,D]}{resid_{final}}\stackrel{[B,L,D]}{divmag}\stackrel{[B,L,D]}{W_N}\stackrel{[D,V]}{W_{U}}$$
 
-$$\stackrel{[B,L,V]}{logits} = \Big(\sum_{i=1}^{Layers} \stackrel{[B,L,E]}{y^i} \stackrel{[B,L,E]}{{skip}^i} \stackrel{[E,D]}{W_O^i} + \stackrel{[B,L,E]}{x^i} \stackrel{[E]}{W_D^i} \stackrel{[B,L,E]}{{skip}^i} \stackrel{[E,D]}{W_O^i}\Big) \stackrel{[B,L,D]}{divmag}\stackrel{[B,L,D]}{W_N}\stackrel{[D,V]}{W_{U}}$$
+$$\stackrel{[B,L,V]}{logits} = \Big(embed(\stackrel{[B,L]}{input}) + \sum_{i=1}^{Layers} \stackrel{[B,L,E]}{y^i} \stackrel{[B,L,E]}{silu({skip}^i)} \stackrel{[E,D]}{W_O^i} + \stackrel{[B,L,E]}{x^i} \stackrel{[E]}{W_D^i} \stackrel{[B,L,E]}{silu({skip}^i)} \stackrel{[E,D]}{W_O^i}\Big) \stackrel{[B,L,D]}{divmag}\stackrel{[B,L,D]}{W_N}\stackrel{[D,V]}{W_{U}}$$
 
-$$\stackrel{[B,L,V]}{logits} = \sum_{i=1}^{Layers} \stackrel{[B,L,E]}{y^i} \stackrel{[B,L,E]}{{skip}^i} \stackrel{[E,D]}{W_O^i}\stackrel{[B,L,D]}{divmag}\stackrel{[B,L,D]}{W_N}\stackrel{[D,V]}{W_{U}} + \stackrel{[B,L,E]}{x^i} \stackrel{[E]}{W_D^i} \stackrel{[B,L,E]}{{skip}^i} \stackrel{[E,D]}{W_O^i}\stackrel{[B,L,D]}{divmag}\stackrel{[B,L,D]}{W_N}\stackrel{[D,V]}{W_{U}}$$
+$$\stackrel{[B,L,V]}{logits} = embed(\stackrel{[B,L]}{input})\stackrel{[B,L,D]}{divmag}\stackrel{[B,L,D]}{W_N}\stackrel{[D,V]}{W_{U}} + \sum_{i=1}^{Layers} \stackrel{[B,L,E]}{y^i} \stackrel{[B,L,E]}{silu({skip}^i)} \stackrel{[E,D]}{W_O^i}\stackrel{[B,L,D]}{divmag}\stackrel{[B,L,D]}{W_N}\stackrel{[D,V]}{W_{U}} + \stackrel{[B,L,E]}{x^i} \stackrel{[E]}{W_D^i} \stackrel{[B,L,E]}{silu({skip}^i)} \stackrel{[E,D]}{W_O^i}\stackrel{[B,L,D]}{divmag}\stackrel{[B,L,D]}{W_N}\stackrel{[D,V]}{W_{U}}$$
 
 Each term in this sum is of size `V` and shows the contribution of the layer to the logits.
 
@@ -1665,11 +1665,11 @@ In this way we can see that $y^i$ is really a weighted sum of $N$ different $E$-
 
 Thus we can write
 
-$$\stackrel{[B,L,V]}{logits} = \sum_{i=1}^{Layers} \stackrel{[B,L,E]}{y^i} \stackrel{[B,L,E]}{{skip}^i} \stackrel{[E,D]}{W_O^i}\stackrel{[B,L,D]}{divmag}\stackrel{[B,L,D]}{W_N}\stackrel{[D,V]}{W_{U}} + \stackrel{[B,L,E]}{x^i} \stackrel{[E]}{W_D^i} \stackrel{[B,L,E]}{{skip}^i} \stackrel{[E,D]}{W_O^i}\stackrel{[B,L,D]}{divmag}\stackrel{[B,L,D]}{W_N}\stackrel{[D,V]}{W_{U}}$$
+$$\stackrel{[B,L,V]}{logits} = embed(\stackrel{[B,L]}{input})\stackrel{[B,L,D]}{divmag}\stackrel{[B,L,D]}{W_N}\stackrel{[D,V]}{W_{U}} + \sum_{i=1}^{Layers} \stackrel{[B,L,E]}{y^i} \stackrel{[B,L,E]}{silu({skip}^i)} \stackrel{[E,D]}{W_O^i}\stackrel{[B,L,D]}{divmag}\stackrel{[B,L,D]}{W_N}\stackrel{[D,V]}{W_{U}} + \stackrel{[B,L,E]}{x^i} \stackrel{[E]}{W_D^i} \stackrel{[B,L,E]}{silu({skip}^i)} \stackrel{[E,D]}{W_O^i}\stackrel{[B,L,D]}{divmag}\stackrel{[B,L,D]}{W_N}\stackrel{[D,V]}{W_{U}}$$
 
 as (using the sidenote on weighted sums from above, and let $$\stackrel{[B,L]}{C^i_{sum}} = \sum^N_{n=1} \stackrel{[B,L]}{C[:,:,n]}$$)
 
-$$\stackrel{[B,L,V]}{logits} = \sum_{i=1}^{Layers} \sum^N_{n=1} \stackrel{[B,L,1]}{C^i[:,:,n]} \stackrel{[B,L,E]}{h^i[:,:,:,n]} \stackrel{[B,L,E]}{{skip}^i} \stackrel{[E,D]}{W_O^i}\stackrel{[B,L,D]}{divmag}\stackrel{[B,L,D]}{W_N}\stackrel{[D,V]}{W_{U}} + \frac{\stackrel{[B,L,1]}{C^i[:,:,n]}\stackrel{[B,L,E]}{x^i}}{\stackrel{[B,L,1]}{C^i_{sum}}} \stackrel{[E]}{W_D^i} \stackrel{[B,L,E]}{{skip}^i} \stackrel{[E,D]}{W_O^i}\stackrel{[B,L,D]}{divmag}\stackrel{[B,L,D]}{W_N}\stackrel{[D,V]}{W_{U}}$$
+$$\stackrel{[B,L,V]}{logits} = embed(\stackrel{[B,L]}{input})\stackrel{[B,L,D]}{divmag}\stackrel{[B,L,D]}{W_N}\stackrel{[D,V]}{W_{U}} + \sum_{i=1}^{Layers} \sum^N_{n=1} \stackrel{[B,L,1]}{C^i[:,:,n]} \stackrel{[B,L,E]}{h^i[:,:,:,n]} \stackrel{[B,L,E]}{silu({skip}^i)} \stackrel{[E,D]}{W_O^i}\stackrel{[B,L,D]}{divmag}\stackrel{[B,L,D]}{W_N}\stackrel{[D,V]}{W_{U}} + \frac{\stackrel{[B,L,1]}{C^i[:,:,n]}\stackrel{[B,L,E]}{x^i}}{\stackrel{[B,L,1]}{C^i_{sum}}} \stackrel{[E]}{W_D^i} \stackrel{[B,L,E]}{silu({skip}^i)} \stackrel{[E,D]}{W_O^i}\stackrel{[B,L,D]}{divmag}\stackrel{[B,L,D]}{W_N}\stackrel{[D,V]}{W_{U}}$$
 
 #### Having E N-sized h vectors perspective:
 
