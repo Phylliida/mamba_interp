@@ -9,6 +9,7 @@ from typing import Dict, List, NamedTuple, Optional, Tuple, Union, overload
 from jaxtyping import Float, Int
 from contextlib import contextmanager
 
+import re
 import time
 import logging
 from dataclasses import dataclass
@@ -51,14 +52,21 @@ def get_converted_model_from_hf(pretrained_model_name, device='cuda'):
         vocab_size=config_data['vocab_size'],
         device=device
     )
+    
+    state_dict = load_state_dict_hf(pretrained_model_name)
+    
+    converted_state_dict = convert_state_dict_to_our_format(cfg, state_dict=state_dict)
+        
+    return cfg, converted_state_dict
+
+
+def convert_state_dict_to_our_format(cfg, state_dict):
     D = cfg.d_model
     E = cfg.d_inner
     N = cfg.d_state
     D_delta = cfg.dt_rank
     D_conv = cfg.d_conv
     V = cfg.vocab_size
-    
-    state_dict = load_state_dict_hf(pretrained_model_name)
     new_state_dict = {}
     for key, value in state_dict.items():
         key = key.replace("backbone.", "").replace("mixer.", "")
@@ -84,8 +92,88 @@ def get_converted_model_from_hf(pretrained_model_name, device='cuda'):
             new_state_dict[key.replace(".D", ".W_D")] = value
         else:
             new_state_dict[key] = value
+    return new_state_dict
+
+
+def convert_state_dict_to_original_format(cfg, state_dict):
+    new_state_dict = {}
+    for key, value in state_dict.items():
+        original_key = key
+        if not 'lm_head' in key: # everything except lm_head has backbone in front
+            key = 'backbone.' + key
+        # replace blocks.*.stuff with layers.*.mixer.stuff
+        key = re.sub(r"blocks\.(\d+)\.", r"layers.\1.mixer.", key)
+
+        # they don't put the norm in mixer
+        if 'mixer.norm' in key:
+            key = key.replace("mixer.norm", "norm")
+        
+        if "in_proj" in key:
+            # we split this into in_proj and skip_proj
+            in_proj = value
+            skip_proj = state_dict[original_key.replace("in_proj", "skip_proj")]
+            new_state_dict[key] = torch.cat([in_proj, skip_proj], dim=0)
+        elif "skip_proj" in key:
+            pass # we do this above
+        elif "W_delta_2" in key:
+            new_state_dict[key.replace("W_delta_2", "dt_proj")] = value
+        # we renamed these
+        elif 'dt_proj' in key:
+            new_state_dict[key.replace("dt_proj", "W_delta_2")] = value
+        elif 'norm' in key and not 'layers' in key: # the base norm is called norm_f
+            new_state_dict[key.replace("norm", "norm_f")] = value
+        # we split x_proj into three seperate things
+        elif 'W_delta_1' in key:
+            W_delta_1 = value
+            W_B = state_dict[original_key.replace("W_delta_1", "W_B")]
+            W_C = state_dict[original_key.replace("W_delta_1", "W_C")]
+            new_state_dict[key.replace("W_delta_1", "x_proj")] = torch.cat([W_delta_1, W_B, W_C], dim=0)
+        elif 'W_B' in key or 'W_C' in key:
+            pass # we do this above
+        # we call this W_D
+        elif "W_D" in key:
+            new_state_dict[key.replace("W_D", "D")] = value
+        else:
+            new_state_dict[key] = value
+    return new_state_dict
+
+def test_state_dict_convert(device='cuda'):
+
+    from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
+
+    cfg, converted_state_dict = get_converted_model_from_hf("state-spaces/mamba-370m", device=device)
+
+    #their_model = MambaLMHeadModel.from_pretrained("state-spaces/mamba-370m")
+    #their_model = their_model.to(cfg.device)
+    test_inputs = torch.tensor([[1,2]], device=cfg.device)
+
+    #their_logits = their_model.forward(test_inputs)
+    our_model = HookedMamba(cfg)
+    our_model.load_state_dict(converted_state_dict)
+    our_model = our_model.to(cfg.device)
+    our_logits = our_model.forward(test_inputs)
     
-    return cfg, new_state_dict
+    for i in range(10):
+        original = convert_state_dict_to_original_format(cfg, converted_state_dict)
+        converted = convert_state_dict_to_our_format(cfg, original)
+    our_model_again = HookedMamba(cfg)
+    our_model_again.load_state_dict(converted)
+    our_model_again = our_model_again.to(cfg.device)
+    our_logits_again = our_model_again.forward(test_inputs)
+
+
+    #their_model.load_state_dict(original)
+    #their_model = their_model.to(cfg.device)
+    #their_again_logits = their_model.forward()
+
+    #assert(torch.allclose(their_logits, our_logits))
+    #assert(torch.allclose(their_logits, their_again_logits))
+    
+    assert(torch.allclose(our_logits, our_logits_again))
+    
+    print("all tests passed")
+
+
 
 @dataclass
 class ModelCfg:
@@ -610,7 +698,6 @@ class InputDependentHookedRootModule(HookedTransformer):
         self.did_setup_input_dependent_hooks = False
 
         
-
 def tokenize_if_str(tokenizer, input):
     if type(input) is str:
         input = tokenizer(input, return_tensors='pt')['input_ids']
@@ -1043,7 +1130,7 @@ class HookedMambaBlock(nn.Module):
         y_out     = self.out_proj( y_skip ) # no bias
         y_out     = self.hook_out_proj(y_out) # [B,L,D]
     
-        # [B,L,D]      [B,L,D]   [B,L,D]
+        # [B,L,D]   [B,L,D]   [B,L,D]
         resid     = resid +  y_out
         resid     = self.hook_resid_post(resid) # [B,L,D]
         
