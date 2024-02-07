@@ -766,7 +766,7 @@ class HookedMambaBlock(nn.Module):
         self.hook_normalized_input = HookPoint() # [B,L,D]
         
         self.skip_proj = nn.Linear(D, E, bias=False)
-        self.hook_skip_proj = HookPoint() # [B,L,E]
+        self.hook_skip = HookPoint() # [B,L,E]
         self.in_proj   = nn.Linear(D, E, bias=False)
         self.hook_in_proj = HookPoint() # [B,L,E]
         
@@ -847,7 +847,7 @@ class HookedMambaBlock(nn.Module):
         
         # [B,L,E]          [D->E]     [B,L,D]
         skip       = self.skip_proj( resid_norm ) # no bias
-        skip       = self.hook_skip_proj(skip) # [B,L,E]
+        skip       = self.hook_skip(skip) # [B,L,E]
         
         # [B,L,E]          [D->E]   [B,L,D]
         x_in       = self.in_proj( resid_norm ) # no bias
