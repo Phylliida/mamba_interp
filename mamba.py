@@ -143,8 +143,8 @@ def test_state_dict_convert(device='cuda'):
 
     cfg, converted_state_dict = get_converted_model_from_hf("state-spaces/mamba-370m", device=device)
 
-    #their_model = MambaLMHeadModel.from_pretrained("state-spaces/mamba-370m")
-    #their_model = their_model.to(cfg.device)
+    their_model = MambaLMHeadModel.from_pretrained("state-spaces/mamba-370m")
+    their_model = their_model.to(cfg.device)
     test_inputs = torch.tensor([[1,2]], device=cfg.device)
 
     #their_logits = their_model.forward(test_inputs)
@@ -162,7 +162,7 @@ def test_state_dict_convert(device='cuda'):
     our_logits_again = our_model_again.forward(test_inputs)
 
 
-    #their_model.load_state_dict(original)
+    their_model.load_state_dict(original)
     #their_model = their_model.to(cfg.device)
     #their_again_logits = their_model.forward()
 
