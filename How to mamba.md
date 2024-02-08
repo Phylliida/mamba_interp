@@ -15,7 +15,7 @@ This is a diffeq, where $\dot{h}(t)$ is the derivitave of $h(t)$ with respect to
 
 If we have an initial $h_0$, we can approximate our diffeq this way:
 
-$$\stackrel{[N]}{h_i} = \stackrel{[1]}{\Delta}\stackrel{[N,N]}{A}\stackrel{[N]}{h_{i-1}} + \stackrel{[1]}{\Delta}\stackrel{[N,1]}{B}\stackrel{[1]}{x_i}$$
+$$\stackrel{[N]}{h_i} = \stackrel{[1]}{\Delta}\stackrel{[N,N]}{A}\stackrel{[N]}{h_{i-1}} + \stackrel{[1]}{\Delta}\stackrel{[N,1]}{B}\stackrel{[1]}{x_i} + \stackrel{[N]}{h_{i-1}}$$
 $$\stackrel{[1]}{y_i} = \stackrel{[1,N]}{C}\stackrel{[N]}{h_i}$$
 
 Where $\Delta$ is a small timestep, like $0.001$.
@@ -26,6 +26,11 @@ $$p_i = \Delta v + p_{i-1}$$
 
 We are doing the same sort of thing for $h(t)$.
 
+Note, we can rewrite this as
+
+$$\stackrel{[N]}{h_i} = (\stackrel{[1]}{\Delta}\stackrel{[N,N]}{A} + \stackrel{[N,N]}{I})\stackrel{[N]}{h_{i-1}} + \stackrel{[1]}{\Delta}\stackrel{[N,1]}{B}\stackrel{[1]}{x_i}$$
+
+Where $\stackrel{[N,N]}{I}$ is the identity matrix. This form will show up later.
 </details>
 
 <details>
@@ -33,14 +38,14 @@ We are doing the same sort of thing for $h(t)$.
 
 Above, we have:
 
-$$\stackrel{[N]}{h_i} = \stackrel{[1]}{\Delta}\stackrel{[N,N]}{A}\stackrel{[N]}{h_{i-1}} + \stackrel{[1]}{\Delta}\stackrel{[N,1]}{B}\stackrel{[1]}{x_i}$$
+$$\stackrel{[N]}{h_i} = (\stackrel{[1]}{\Delta}\stackrel{[N,N]}{A} + \stackrel{[N,N]}{I})\stackrel{[N]}{h_{i-1}} + \stackrel{[1]}{\Delta}\stackrel{[N,1]}{B}\stackrel{[1]}{x_i}$$
 $$\stackrel{[1]}{y_i} = \stackrel{[1,N]}{C}\stackrel{[N]}{h_i}$$
 
 We can write this as
 
-$$\bar{A} = \Delta A$$
+$$\stackrel{[N,N]}{\bar{A}} = (\stackrel{[1]}{\Delta} \stackrel{[N,N]}{A}+\stackrel{[N,N]}{I})$$
 
-$$\bar{B} = \Delta B$$
+$$\stackrel{[N,N]}{\bar{B}} = \stackrel{[1]}{\Delta} \stackrel{[N,N]}{B}$$
 
 So we get
 
@@ -69,6 +74,8 @@ $$\bar{A} = I+\Delta A$$
 
 $$\bar{B} = \Delta B$$
 
+This is the discretization rule we used in the introduction.
+
 If $\alpha=\frac{1}{2}$ this is known as the **Bilinear Method**
 
 $$\bar{A} = (I-\frac{1}{2}\Delta A)^{-1}(I+\frac{1}{2}\Delta A)$$
@@ -87,9 +94,35 @@ Mamba uses a discretization rule that's a mix of Zero-Order Hold and Euler Metho
 
 $$\bar{A} = \exp(\Delta A)$$
 
-(element-wise exp, *not* a matrix exponential)
+(keep in mind that in mamba, $A$ is diagonal, and this is a element-wise exp, *not* a matrix exponential)
 
 $$\bar{B} = \Delta B$$
+
+Why is this justified? Consider the ZOH $\bar{B}$:
+
+$$\bar{B} = (\Delta A)^{-1} (\exp(\Delta A)-I) \Delta B$$
+
+In mamba, $A$ is diagonal, so we can write
+
+$$\big((\Delta A)^{-1} (\exp(\Delta A)-I)\big)_{i,i}$$
+
+$$=\frac{\exp(\Delta A_{i,i}) - 1}{\Delta A_{i,i}}$$
+
+Let $$x = \Delta A_{i,i}$$ and this is just
+
+$$\frac{\exp(x) - 1}{x}$$
+
+The taylor series expansion of $\exp(x)$ at $x=0$ is
+
+$$\exp(x) = 1 + x + \frac{x^2}{2} + \frac{x^3}{6} + ...$$
+
+And if we just consider the first-order terms, then we get
+
+$$\frac{\exp(x) - 1}{x} \approx \frac{1 + x - 1}{x} = 1$$
+
+Which means that
+
+$$\bar{B} = (\Delta A)^{-1} (\exp(\Delta A)-I) \Delta B \approx \Delta B$$
 
 </details>
 
