@@ -8,6 +8,7 @@ from einops import rearrange, repeat, einsum
 from typing import Dict, List, NamedTuple, Optional, Tuple, Union, overload
 from jaxtyping import Float, Int
 from contextlib import contextmanager
+from typing_extensions import Literal
 
 import re
 import time
@@ -760,6 +761,10 @@ class HookedMamba(InputDependentHookedRootModule):
         fast_conv=False,
         fast_ssm=False,
         warn_disabled_hooks=True,
+        start_at_layer: Optional[int] = None,
+        stop_at_layer: Optional[int] = None,
+        prepend_bos: Optional[bool] = USE_DEFAULT_VALUE,
+        padding_side: Optional[Literal["left", "right"]] = USE_DEFAULT_VALUE,
     ) -> Union[
         None,
         Float[torch.Tensor, "B L V"],
@@ -767,7 +772,8 @@ class HookedMamba(InputDependentHookedRootModule):
         Tuple[Float[torch.Tensor, "B L V"], Loss],
     ]:
         # make sure input is ids and not a str
-        input = tokenize_if_str(tokenizer=self.tokenizer, input=input)
+        if type(input) is str:
+            input = self.to_tokens(input=input, prepend_bos=prepend_bos, padding_side=padding_side)
         
         input = input.to(self.cfg.device)
         
@@ -793,10 +799,20 @@ class HookedMamba(InputDependentHookedRootModule):
             input_embed         = input
         resid         = self.hook_embed(input_embed)
         
-        for layer in self.blocks:
+
+        if start_at_layer is None:
+            start_at_layer = 0
+        if stop_at_layer is None:
+            stop_at_layer = self.cfg.n_layers
+
+        for layer in self.blocks[start_at_layer:stop_at_layer]:
             # [B,L,D]         [B,L,D]
             resid     = layer(resid, fast_conv=fast_conv, fast_ssm=fast_ssm, warn_disabled_hooks=warn_disabled_hooks)
-         
+        
+        # we stop early, just return the resid
+        if not stop_at_layer is None:
+            return resid
+        
         # [B,L,D]                   [B,L,D]
         resid_normed     = self.norm( resid )
         resid_normed     = self.hook_norm(resid_normed) # [B,L,D]
