@@ -57,7 +57,16 @@ def run_evals(
 
     l2_norm_in = torch.norm(original_act, dim=-1)
     l2_norm_out = torch.norm(sae_out, dim=-1)
-    l2_norm_ratio = l2_norm_out / l2_norm_in
+    l2_norm_in_for_div = l2_norm_in.clone()
+    l2_norm_in_for_div[torch.abs(l2_norm_in_for_div)<0.0001] = 1
+    l2_norm_ratio = l2_norm_out / l2_norm_in_for_div
+
+    l2_norm_out = torch.nan_to_num(l2_norm_out, nan=0.0, posinf=0.0, neginf=0.0)
+    l2_norm_ratio = torch.nan_to_num(l2_norm_ratio, nan=0.0, posinf=0.0, neginf=0.0)
+    recons_score = torch.nan_to_num(recons_score, nan=0.0, posinf=0.0, neginf=0.0)
+    ntp_loss = torch.nan_to_num(ntp_loss, nan=0.0, posinf=0.0, neginf=0.0)
+    recons_loss = torch.nan_to_num(recons_loss, nan=0.0, posinf=0.0, neginf=0.0)
+    zero_abl_loss = torch.nan_to_num(zero_abl_loss, nan=0.0, posinf=0.0, neginf=0.0)
 
     wandb.log(
         {
@@ -130,6 +139,9 @@ def run_evals(
         )
         kl_result_ablation = kl_result_ablation.sum(dim=-1).numpy()
 
+        kl_result_reconstructed = torch.nan_to_num(kl_result_reconstructed, nan=0.0, posinf=0.0, neginf=0.0)
+        kl_result_ablation = torch.nan_to_num(kl_result_ablation, nan=0.0, posinf=0.0, neginf=0.0)
+        
         wandb.log(
             {
                 "metrics/kldiv_reconstructed": kl_result_reconstructed.mean().item(),
@@ -170,7 +182,10 @@ def get_recons_loss(sparse_autoencoder, model, activation_store, batch_tokens):
         batch_tokens, return_type="loss", fwd_hooks=[(hook_point, zero_ablate_hook)]
     )
 
-    score = (zero_abl_loss - recons_loss) / (zero_abl_loss - loss)
+    div_val = (zero_abl_loss - loss).clone()
+    div_val[torch.abs(div_val)<0.001] = 1.0
+
+    score = (zero_abl_loss - recons_loss) / div_val 
 
     return score, loss, recons_loss, zero_abl_loss
 
