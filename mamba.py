@@ -771,6 +771,8 @@ class HookedMamba(InputDependentHookedRootModule):
         Loss,
         Tuple[Float[torch.Tensor, "B L V"], Loss],
     ]:
+        fast_ssm = True
+        fast_conv = True
         # make sure input is ids and not a str
         if type(input) is str:
             input = self.to_tokens(input=input, prepend_bos=prepend_bos, padding_side=padding_side)
@@ -799,18 +801,22 @@ class HookedMamba(InputDependentHookedRootModule):
             input_embed         = input
         resid         = self.hook_embed(input_embed)
         
-
+        stopping = False
         if start_at_layer is None:
             start_at_layer = 0
+        else:
+            stopping = True
         if stop_at_layer is None:
             stop_at_layer = self.cfg.n_layers
-
+        else:
+            stopping = True
+        
         for layer in self.blocks[start_at_layer:stop_at_layer]:
             # [B,L,D]         [B,L,D]
             resid     = layer(resid, fast_conv=fast_conv, fast_ssm=fast_ssm, warn_disabled_hooks=warn_disabled_hooks)
         
         # we stop early, just return the resid
-        if not stop_at_layer is None:
+        if stopping:
             return resid
         
         # [B,L,D]                   [B,L,D]
