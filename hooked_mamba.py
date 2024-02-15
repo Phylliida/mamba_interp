@@ -52,12 +52,7 @@ def get_converted_model_from_hf(pretrained_model_name, device='cuda'):
         return torch.load(resolved_archive_file, weights_only=True, map_location=device)
         
     config_data = load_config_hf(pretrained_model_name)
-    cfg = MambaCfg(
-        d_model=config_data['d_model'],
-        n_layers=config_data['n_layer'],
-        vocab_size=config_data['vocab_size'],
-        device=device
-    )
+    cfg = convert_original_config_to_hooked_mamba_config(config_data, device=device)
     
     state_dict = load_state_dict_hf(pretrained_model_name, device=device)
     
@@ -166,6 +161,105 @@ def convert_hooked_state_dict_to_original_format(cfg, state_dict):
     return new_state_dict
 
 
+
+SSM_CONFIG = 'ssm_config'
+INITIALIZER_CFG = 'initializer_cfg'
+
+def convert_original_config_to_hooked_mamba_config(cfg: dict, device='cuda'):
+    '''
+    Convert the cfg dict used in the mamba ssm github
+    into a MambaCfg object
+    '''
+    # it's already converted, what are you doing
+    if type(cfg) is MambaCfg:
+        return cfg
+    
+
+    # extract the minimal stuff needed for a cfg first
+    default_cfg = MambaCfg(
+        d_model=cfg['d_model'],
+        n_layers=cfg['n_layer'],
+        vocab_size=cfg['vocab_size'],
+        device=device
+    )
+
+
+    # grab any extra params we missed
+    all_params = {}
+    for param, default_value in vars(default_cfg).items():
+        # skip this, its handled below
+        if param == INITIALIZER_CFG:
+            continue
+        all_params[param] = default_value
+        if param in cfg:
+            all_params[param] = cfg[param]
+        # some things are stored in 'ssm_config'
+        if SSM_CONFIG in cfg and param in cfg[SSM_CONFIG]:
+            all_params[param] = cfg[SSM_CONFIG][param]
+        
+    # grab any extra params that are initializer config params
+    init_cfg_params = {}
+    for param, default_value in vars(default_cfg.initializer_cfg).items():
+        init_cfg_params[param] = default_value
+        if param in cfg:
+            init_cfg_params[param] = cfg[param]
+        if INITIALIZER_CFG in cfg and param in cfg[INITIALIZER_CFG]:
+            init_cfg_params[param] = cfg[INITIALIZER_CFG][param]
+    
+    return MambaCfg(initializer_cfg=MambaInitCfg(**init_cfg_params), **all_params)
+        
+
+def convert_hooked_mamba_config_to_original_config(hooked_mamba_cfg : MambaCfg):
+    '''
+    Convert MambaCfg used here into a dict that's compatible
+    with the config format used in mamba ssm
+    '''
+    
+    names_to_convert = {
+        'n_layers': 'n_layer', # this was done to conform with hooked transformer
+    }
+
+    # anything else just return the same name
+    for k in vars(hooked_mamba_cfg).keys():
+        if not k in names_to_convert:
+            names_to_convert[k] = k
+    
+    for k in vars(hooked_mamba_cfg.initializer_cfg).keys():
+        if not k in names_to_convert:
+            names_to_convert[k] = k
+
+    terms_to_go_inside_ssm_config = set([
+        'd_state',
+    ])
+
+    ignore_terms = {
+        'device' # this doesn't belong in the config dict
+    }
+
+    result_dict = {
+        SSM_CONFIG: {},
+        INITIALIZER_CFG: {}
+    }
+
+    # initializer_cfg
+    for k,v in vars(hooked_mamba_cfg.initializer_cfg).items():
+        if not k in ignore_terms:
+           result_dict[INITIALIZER_CFG][names_to_convert[k]] = v
+    
+    # ssm_config
+    for k in terms_to_go_inside_ssm_config:
+        if not k in ignore_terms:
+            result_dict[SSM_CONFIG][names_to_convert[k]] = getattr(hooked_mamba_cfg, k)
+    
+    # everything else
+    for k,v in vars(hooked_mamba_cfg).items():
+        if not k in ignore_terms:
+            if not k in set([INITIALIZER_CFG]) | terms_to_go_inside_ssm_config:
+                result_dict[names_to_convert[k]] = v
+
+    return result_dict
+
+
 @dataclass
 class MambaInitCfg:
     initializer_range: float = 0.02,  # Now only used for embedding layer.
@@ -176,6 +270,7 @@ class MambaInitCfg:
     dt_min: float = 0.001,
     dt_max: float = 0.1,
     dt_init_floor : float = 1e-4
+
 
 @dataclass
 class MambaCfg:
@@ -193,10 +288,12 @@ class MambaCfg:
     tokenizer_prepends_bos: bool = False
     n_ctx: int = 2048
     device: Union[torch.device,str] = 'cuda'
-    initializer_cfg = MambaInitCfg()
-    
+    initializer_cfg: MambaInitCfg = MambaInitCfg()
+    d_inner: int = -1
+
     def __post_init__(self):
-        self.d_inner = int(self.expand * self.d_model)
+        if self.d_inner == -1:
+            self.d_inner = int(self.expand * self.d_model)
         
         if self.dt_rank == 'auto':
             self.dt_rank = math.ceil(self.d_model / 16)
@@ -245,7 +342,7 @@ class HookedMamba(HookedTransformer, InputDependentHookedRootModule):
     def __init__(self,
                  cfg: MambaCfg,
                  tokenizer: AutoTokenizer,
-                 initialize_params: Optional[bool] = True,
+                 initialize_params: Optional[bool] = False,
                  device: torch.device = 'cpu'):
         """
         Args:
@@ -255,12 +352,17 @@ class HookedMamba(HookedTransformer, InputDependentHookedRootModule):
         """
         super(InputDependentHookedRootModule, self).__init__()
 
+        if not type(cfg) is MambaCfg:
+            print("converting cfg dict into MambaCfg")
+            cfg = convert_original_config_to_hooked_mamba_config(cfg=cfg, device=device)
         self.cfg = cfg
         
         self.tokenizer = tokenizer
-        # patch to make some of the HookedTransformer stuff work correctly
-        if not hasattr(self.tokenizer, "pad_token") or self.tokenizer.pad_token is None:
-           self.tokenizer.pad_token = self.tokenizer.eos_token
+
+        if not self.tokenizer is None:
+            # patch to make some of the HookedTransformer stuff work correctly
+            if not hasattr(self.tokenizer, "pad_token") or self.tokenizer.pad_token is None:
+                self.tokenizer.pad_token = self.tokenizer.eos_token
 
         D = cfg.D
         V = cfg.V
@@ -361,8 +463,7 @@ class HookedMamba(HookedTransformer, InputDependentHookedRootModule):
             fast_conv: Optional[bool]: If False, uses unoptimized pytorch code for the conv1d. If true,
                 uses the custom cuda kernel from causal_conv1d (from https://github.com/Dao-AILab/causal-conv1d)
                 must be installed seperately by using `pip install causal-conv1d>=1.1.0`
-                Note that setting fast_conv=True will disable disable blocks.*.hook_conv and
-                blocks.*.hook_conv_after_cutoff (* represents a layer index)
+                Note that setting fast_conv=True will disable disable blocks.*.hook_conv (* represents a layer index)
             fast_ssm: Optional[bool]: If False, uses unoptimized pytorch code for the ssm loop. If true,
                 uses the custom cuda kernel from mamba-ssm (from https://github.com/state-spaces/mamba),
                 must be installed seperately by using `pip install mamba-ssm`
@@ -494,8 +595,7 @@ class HookedMambaBlock(nn.Module):
             padding=D_conv - 1,
             device=device
         )
-        self.hook_conv = HookPoint()  # [B,L+D_conv-1,E]
-        self.hook_conv_after_cutoff = HookPoint() # [B,L,E]
+        self.hook_conv = HookPoint()  # [B,L,E]
         self.hook_ssm_input = HookPoint() # [B,L,E]
         
         ## SSM Params
@@ -588,8 +688,7 @@ class HookedMambaBlock(nn.Module):
             fast_conv: Optional[bool]: If False, uses unoptimized pytorch code for the conv1d. If true,
                 uses the custom cuda kernel from causal_conv1d (from https://github.com/Dao-AILab/causal-conv1d)
                 must be installed seperately by using `pip install causal-conv1d>=1.1.0`
-                Note that setting fast_conv=True will disable disable blocks.*.hook_conv and
-                blocks.*.hook_conv_after_cutoff (* represents a layer index)
+                Note that setting fast_conv=True will disable disable blocks.*.hook_conv (* represents a layer index)
             fast_ssm: Optional[bool]: If False, uses unoptimized pytorch code for the ssm loop. If true,
                 uses the custom cuda kernel from mamba-ssm (from https://github.com/state-spaces/mamba),
                 must be installed seperately by using `pip install mamba-ssm`
@@ -631,7 +730,7 @@ class HookedMambaBlock(nn.Module):
         x_conv     = rearrange(x_in, 'B L E -> B E L')
         if fast_conv:
             if warn_disabled_hooks:
-                for hook in [self.hook_conv, self.hook_conv_after_cutoff]:
+                for hook in [self.hook_conv]:
                     if len(hook.fwd_hooks) > 0 or len(hook.bwd_hooks) > 0:
                         print(f"warning: hook {hook.name} will not be called because fast_conv=True, pass warn_disabled_hooks=True to disable this warning")
 
@@ -652,10 +751,9 @@ class HookedMambaBlock(nn.Module):
             x_conv_out = self.conv1d(   x_conv   )
             # [B,L+3,E]            [B,E,L+3]
             x_conv_out = rearrange(x_conv_out, 'B E L -> B L E')
-            x_conv_out = self.hook_conv(x_conv_out) # [B,L+3,E] 
             # [B,L,E]
             x_conv_out_cutoff = x_conv_out[:,:L,:]
-            x_conv_out_cutoff = self.hook_conv_after_cutoff(x_conv_out_cutoff) # [B,L,E]
+            x_conv_out_cutoff = self.hook_conv(x_conv_out_cutoff) # [B,L,E]
 
             ###### Nonlinearity  ######
             # [B,L,E]               [B,L,E]
@@ -732,15 +830,15 @@ class HookedMambaBlock(nn.Module):
             # all the stuff you see in the else clause below 
             # the contiguous is needed for cuda reasons
             y_apply_D_ssm_output, scan_intermediates, y_skip_ssm_output = SelectiveScanFn.apply(
-                                    x=x_ssm_input.contiguous(), # u
-                                    delta=delta_2_ssm_input.contiguous(), # delta
-                                    A=self.A.contiguous(), # A 
-                                    B=B_ssm_input.contiguous(), # B
-                                    C=C_ssm_input.contiguous(), # C
-                                    D=self.W_D.float(), # D
-                                    skip=skip_ssm_input.contiguous(), # z
-                                    delta_bias=self.empty_bias, # delta_bias
-                                    delta_softplus=True) # delta_softplus
+                                    x_ssm_input.contiguous(), # u
+                                    delta_2_ssm_input.contiguous(), # delta
+                                    self.A.contiguous(), # A 
+                                    B_ssm_input.contiguous(), # B
+                                    C_ssm_input.contiguous(), # C
+                                    self.W_D.float(), # D
+                                    skip_ssm_input.contiguous(), # z
+                                    self.empty_bias, # delta_bias
+                                    True) # delta_softplus
             
             ssm_output_has_hooks = len(self.hook_ssm_output.fwd_hooks) > 0 or len(self.hook_ssm_output.bwd_hooks) > 0
            
@@ -918,3 +1016,30 @@ def test_state_dict_convert(device='cuda'):
     assert(torch.allclose(our_logits, our_logits_again))
     
     print("all tests passed")
+
+
+
+# they are different due to numerical differences so this will print a lot
+def test_fast_grads(model):
+    import itertools
+    from collections import defaultdict
+    grads = defaultdict(lambda: {})
+    torch.set_grad_enabled(True)
+    
+    for param_name, param in model.named_parameters():
+        reference_value = None
+        for fast_conv, fast_ssm in itertools.product([False, True], [False, True]):    
+            a = model.forward(torch.tensor([[1,2]]).to(model.cfg.device), fast_conv=fast_conv, fast_ssm=fast_ssm)
+            loss = torch.mean(a)
+            loss.backward()
+            if reference_value is None:
+                if hasattr(param, "grad") and not param.grad is None:
+                    reference_value = param.grad.clone()
+                else:
+                    print("param", name, "does not have grad, skipping")
+                    break
+            else:
+                if not torch.allclose(reference_value, param.grad, atol=0.05):
+                    print(f"Error: grads not the same for param {param_name}")
+                    print("Non fast grads:", reference_value)
+                    print(f"grads for fast_conv={fast_conv}, fast_ssm={fast_ssm}", param.grad)
