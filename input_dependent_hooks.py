@@ -327,10 +327,13 @@ class InputDependentHookedRootModule(HookedRootModule):
         Note:
             This function will treat the first input to model_args as input. If 
         """
+        # various ways input might be encoded in the model
         if 'input' in model_kwargs:
             input = model_kwargs['input']
         elif len(model_args) > 0:
             input = model_args[0]
+        elif 'model_args' in model_kwargs and len(model_kwargs['model_args']) > 0:
+            input = model_kwargs['model_args'][0]
         else:
             raise Exception(f"Could not find input in args {model_args} and kwargs {model_kwargs}")
         

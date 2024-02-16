@@ -326,7 +326,7 @@ class RMSNorm(nn.Module):
     def __init__(self,
                  d: int,
                  eps: float = 1e-5,
-                 device: torch.device = 'cpu'):
+                 device: Union[torch.device,str] = 'cpu'):
         super().__init__()
         self.eps = eps
         self.weight = nn.Parameter(torch.ones(d, device=device))
@@ -342,13 +342,11 @@ class HookedMamba(HookedTransformer, InputDependentHookedRootModule):
     def __init__(self,
                  cfg: MambaCfg,
                  tokenizer: AutoTokenizer,
-                 initialize_params: Optional[bool] = False,
-                 device: torch.device = 'cpu'):
+                 initialize_params: Optional[bool] = False):
         """
         Args:
             cfg MambaCfg: Model config
             initialize_params Optional[bool]: If True, will do proper initialization of parameters
-            device torch.device: The device to put weights on
         """
         super(InputDependentHookedRootModule, self).__init__()
 
@@ -356,6 +354,8 @@ class HookedMamba(HookedTransformer, InputDependentHookedRootModule):
             print("converting cfg dict into MambaCfg")
             cfg = convert_original_config_to_hooked_mamba_config(cfg=cfg, device=device)
         self.cfg = cfg
+
+        device : Union[torch.device,str] = self.cfg.device
         
         self.tokenizer = tokenizer
 
@@ -370,7 +370,7 @@ class HookedMamba(HookedTransformer, InputDependentHookedRootModule):
         self.embedding = nn.Embedding(V, D, device=device)
         self.hook_embed = HookPoint()
         
-        self.blocks = nn.ModuleList([HookedMambaBlock(cfg=cfg, device=device, initialize_params=initialize_params) for _ in range(cfg.n_layers)])
+        self.blocks = nn.ModuleList([HookedMambaBlock(cfg=cfg, initialize_params=initialize_params) for _ in range(cfg.n_layers)])
         self.norm = RMSNorm(D, device=device)
         self.hook_norm = HookPoint() # [B,L,D]
         self.lm_head  = nn.Linear(D, V, bias=False, device=device)
@@ -554,18 +554,17 @@ class HookedMamba(HookedTransformer, InputDependentHookedRootModule):
 class HookedMambaBlock(nn.Module):
     def __init__(self,
         cfg: MambaCfg,
-        device: torch.device='cpu',
         initialize_params: bool = True):
         """
         Args:
             cfg MambaCfg: Model config
             initialize_params Optional[bool]: If True, will do proper initialization of parameters
-            device torch.device: The device to put weights on
         """
 
         super().__init__()
         self.cfg : MambaCfg = cfg
-        
+        device : Union[torch.device,str] = self.cfg.device
+
         ## Variables
         D = cfg.d_model
         E = cfg.d_inner
@@ -981,17 +980,77 @@ def _init_weights(
                     p /= math.sqrt(n_residuals_per_layer * n_layer)
 
 
+
+
+
+
+
+
+
+### Tests ###
+
+
+DEFAULT_TEST_MODEL_PATH = "state-spaces/mamba-370m"
+def default_test_model(device='cuda'):
+    return HookedMamba.from_pretrained(DEFAULT_TEST_MODEL_PATH, device=device)
+
+def test_no_modify_inplace(model=None, device='cuda'):
+    import itertools
+    if model is None:
+        model = default_test_model(device=device)
+    # This test compares cached things with outputs from run_with_cache
+    # it detects if there was in-place modification changing the output of run_with_hooks after things are stored
+    # (a bug that causes issues when doing patching)
+
+    for fast_conv, fast_ssm in itertools.product([True, False], [True, False]):
+        manual_cache = {}
+        
+        def save_hook(tensor, hook):
+            manual_cache[hook.name] = tensor.detach().to(model.cfg.device).clone()
+            return tensor.clone()
+        
+        
+        input = torch.tensor([[1,2,3]], device=model.cfg.device)
+        model_args = [input]
+        fwd_hooks = []
+        bwd_hooks = []
+        # fwd_hooks=None expands all input_dependent hooks
+        # we need this context to get the input dependent hooks
+        with model.input_dependent_hooks_context(fwd_hooks=None, bwd_hooks=None, model_args=model_args, model_kwargs={}):
+            for name, hp in model.hook_dict.items():
+                fwd_hooks.append((name, save_hook))
+        
+        manual_cache_logit = model.run_with_hooks(
+            input,
+            fwd_hooks=fwd_hooks,
+            bwd_hooks=bwd_hooks,
+            fast_ssm=fast_ssm,
+            fast_conv=fast_conv,
+            warn_disabled_hooks=False,
+        )
+        
+        run_with_cache_logit, run_with_cache_cache = model.run_with_cache(input, fast_ssm=fast_ssm, fast_conv=fast_conv,warn_disabled_hooks=False)
+        
+        for k in manual_cache.keys():
+            manual_value = manual_cache[k]
+            run_with_cache_value = run_with_cache_cache[k]
+            did_modify_inplace = torch.any(manual_value != run_with_cache_value)
+            if did_modify_inplace:
+                print(f"on test for fast_conv {fast_conv} and fast_ssm {fast_ssm}")
+                print("mismatch for key", k, "do you modify it in place?")
+                assert(not did_modify_inplace)
+        
 def test_state_dict_convert(device='cuda'):
 
     from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel
 
-    cfg, converted_state_dict = get_converted_model_from_hf("state-spaces/mamba-370m", device=device)
+    cfg, converted_state_dict = get_converted_model_from_hf(DEFAULT_TEST_MODEL_PATH, device=device)
 
-    their_model = MambaLMHeadModel.from_pretrained("state-spaces/mamba-370m")
+    their_model = MambaLMHeadModel.from_pretrained(DEFAULT_TEST_MODEL_PATH)
     their_model = their_model.to(cfg.device)
     test_inputs = torch.tensor([[1,2]], device=cfg.device)
 
-    #their_logits = their_model.forward(test_inputs)
+    their_logits = their_model.forward(test_inputs)
     our_model = HookedMamba(cfg)
     our_model.load_state_dict(converted_state_dict)
     our_model = our_model.to(cfg.device)
@@ -1008,23 +1067,66 @@ def test_state_dict_convert(device='cuda'):
 
     their_model.load_state_dict(original)
     #their_model = their_model.to(cfg.device)
-    #their_again_logits = their_model.forward()
+    their_again_logits = their_model.forward()
 
     #assert(torch.allclose(their_logits, our_logits))
-    #assert(torch.allclose(their_logits, their_again_logits))
+    assert(torch.allclose(their_logits, their_again_logits))
     
     assert(torch.allclose(our_logits, our_logits_again))
     
-    print("all tests passed")
 
+def test_cfg_conversion():
+    # some extra terms are added by default, so this will display those
+    # the issue is if terms are removed
+    original_cfg = {
+        'd_model': 3,
+        'n_layer': 3,
+        'vocab_size': 48,
+        'ssm_config': {
+            'd_state': 16
+        },
+        'initializer_cfg': {
+            'initializer_range': 0.5,  # Now only used for embedding layer.
+            'rescale_prenorm_residual': False,
+            'n_residuals_per_layer': 3,  # Change to 2 if we have MLP
+            'dt_init': 'totes', # other option is "constant"
+            'dt_scale': 3.5,
+            'dt_min': 0.022,
+            'dt_max': 0.4,
+            'dt_init_floor': 1e-1
+        }
+    }
+    import hooked_mamba
+    from importlib import reload
+    reload(hooked_mamba)
+    hooked_cfg = hooked_mamba.convert_original_config_to_hooked_mamba_config(original_cfg)
+    print(hooked_cfg)
+    original_back_cfg = hooked_mamba.convert_hooked_mamba_config_to_original_config(hooked_cfg)
+
+    def compare_dicts(prefix, original, converted):
+        for k in set(list(original.keys()) + list(converted.keys())):
+            if not k in original:
+                print(f"Warning: added new key {prefix}{k} that was not in original config")
+            if not k in converted:
+                print(f"Error: lost key {prefix}{k} which was in original config but is not after convert and convert back")
+                assert(k in converted)
+            if k in original and k in converted and original[k] != converted[k]:
+                print(f"Error: key {prefix}{k} was originally value {original[k]} but after convert is now {converted[k]}")
+                assert(original[k] == converted[k])
+    compare_dicts("", original_cfg, original_back_cfg)
+    compare_dicts(INITIALIZER_CFG + ".", original_cfg[INITIALIZER_CFG], original_back_cfg[INITIALIZER_CFG])
+    compare_dicts(SSM_CONFIG + ".", original_cfg[SSM_CONFIG], original_back_cfg[SSM_CONFIG])
 
 
 # they are different due to numerical differences so this will print a lot
-def test_fast_grads(model):
+def test_fast_grads(model=None, device='cuda'):
     import itertools
     from collections import defaultdict
     grads = defaultdict(lambda: {})
     torch.set_grad_enabled(True)
+
+    if model is None:
+        model = default_test_model(device=device)
     
     for param_name, param in model.named_parameters():
         reference_value = None
