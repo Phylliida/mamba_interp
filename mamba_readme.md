@@ -35,7 +35,8 @@ cfg = { # your config from a model using https://github.com/state-spaces/mamba
 #            dt_proj -> W_delta_2
 #            D       -> W_D
 #            norm_f  -> norm
-# it also does:
+# it also does some moving around:
+# backbone.
 
 hooked_mamba_cfg = hooked_mamba.convert_original_config_to_hooked_mamba_config(cfg, device=device)
 hooked_mamba_state_dict = hooked_mamba.convert_original_state_dict_to_hooked_format(state_dict)
