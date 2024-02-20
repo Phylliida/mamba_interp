@@ -409,7 +409,6 @@ def gen_prompt_uniform(
             # note this is modified from the original, we just replace the last occurance which makes them swapped
             prompt2 = replace_n_last_occurance(prompt1, name_2, name_1, 1)
             prompt2 = replace_n_last_occurance(prompt2, name_1, name_2, 1)
-            print(repr(prompt2))
             prompt2 = pref + prompt2
             ioi_prompts.append(
                 {"text": prompt2, "IO": name_2, "S": name_1, "TEMPLATE_IDX": temp_id}
@@ -448,15 +447,15 @@ def IOI_generator(tokenizer, num_examples, seed=27, templates=None, symmetric=Tr
         
     names = restrict_to_most_common_size(tokenizer, names, with_space=True, force_size=1)
     
-    print("nouns", noun_dict)
+    #print("nouns", noun_dict)
     
-    print("names", names)
+    #print("names", names)
             
     prompts = gen_prompt_uniform(templates=templates, names=names, nouns_dict=noun_dict, N=num_examples, symmetric=symmetric, abc=abc, seed=seed)
     for prompt in prompts:
         indirect_object = prompt['IO']
-        print("prompt", prompt['text'])
-        print("io", indirect_object)
+        #print("prompt", prompt['text'])
+        #print("io", indirect_object)
         prompt_text = prompt['text'].strip()[:-len(indirect_object)-1] # -1 for space
         # the strip_to_first_token is necessary because some names are multiple tokens, we only care about first token output
         correct = [strip_to_first_token(tokenizer, " "  + prompt['IO'])] # space before is important so it is a single token
@@ -543,6 +542,12 @@ def test_data(model, tokenizer, data_generator, num_examples, top_n=1, debug=Fal
     
     for i in range(top_n): # so its easy to get top_
         num_correct[i] = 0
+        num_incorrect[i] = 0
+        num_other[i] = 0
+        correct_prompts[i] = []
+        incorrect_prompts[i] = []
+        other_prompts[i] = []
+
     
     for prompt, correct, incorrect in data_generator(tokenizer=tokenizer, num_examples=num_examples, *args, **kwargs):
         encoded_options = [tokenizer.encode(x) for x in (correct + incorrect)]
@@ -553,7 +558,7 @@ def test_data(model, tokenizer, data_generator, num_examples, top_n=1, debug=Fal
         input = torch.tensor([bos_token] + tokenizer.encode(prompt)).to(device).view(1, -1)
         
         with torch.no_grad():
-            logits = model(input).logits[0,-1] # 0 because first index is batch, -1 because logits of last token
+            logits = model(input)[0,-1] # 0 because first index is batch, -1 because logits of last token
             prs = torch.softmax(logits, dim=0)
             relative_prs = prs
         relative_prs = torch.softmax(logits[all_valid], dim=0)
