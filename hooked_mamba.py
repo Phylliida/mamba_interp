@@ -230,6 +230,8 @@ def convert_hooked_mamba_config_to_original_config(hooked_mamba_cfg : MambaCfg):
 
     terms_to_go_inside_ssm_config = set([
         'd_state',
+        'd_conv',
+        'expand',
     ])
 
     ignore_terms = {
@@ -648,6 +650,7 @@ class HookedMambaBlock(nn.Module):
         self.hook_delta_2 = HookPoint() # [B,L,E]
         self.hook_delta = HookPoint() # [B,L,E]
         
+        self.hook_A = HookPoint() # [E,N]
         self.hook_A_bar = HookPoint() # [B,L,E,N]
         self.hook_B = HookPoint()     # [B,L,N]
         self.hook_B_bar = HookPoint() # [B,L,E,N]
@@ -761,7 +764,9 @@ class HookedMambaBlock(nn.Module):
         
         ###### SSM ######
        
+        # [E,N]
         self.A = -torch.exp(self.A_log)
+        self.A = self.hook_A(self.A) # [E,N]
        
         ys = []
        
@@ -864,7 +869,7 @@ class HookedMambaBlock(nn.Module):
             A_bar       = torch.exp(einsum(delta, self.A, 'b l e, e n -> b l e n'))
             A_bar       = self.hook_A_bar(A_bar) # [B,L,E,N]
             
-            ## Discretize B (also, multiply by x ahead of time)
+            ## Discretize B
             # [B,L,E,N]          [B,L,E]  [B,L,N] 
             B_bar       = einsum( delta,    B,     'b l e, b l n -> b l e n')
             B_bar       = self.hook_B_bar(B_bar) # [B,L,E,N]
@@ -1083,7 +1088,9 @@ def test_cfg_conversion():
         'n_layer': 3,
         'vocab_size': 48,
         'ssm_config': {
-            'd_state': 16
+            'd_state': 16,
+            'd_conv': 4,
+            'expand': 2,
         },
         'initializer_cfg': {
             'initializer_range': 0.5,  # Now only used for embedding layer.
