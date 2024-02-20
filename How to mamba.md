@@ -351,10 +351,14 @@ V = vocab_size = 50280
 
 ### Params
 ```python
-mamba = object()
+
+class SimpleObject:
+  pass
+
+mamba = SimpleObject()
 
 mamba.embedding = nn.Embedding(V, D)
-mamba.layers = [object() for _ in range(n_layer)]
+mamba.layers = [SimpleObject() for _ in range(n_layer)]
 mamba.norm = RMSNorm(D)
 mamba.lm_head   = nn.Linear(D, V, bias=False)
 
