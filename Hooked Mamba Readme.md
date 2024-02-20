@@ -58,14 +58,14 @@ class RMSNorm(nn.Module):
 
 It may be useful to just look at hooked_mamba.py. Still, here's each hook with a breif summary, in the order they are encountered:
 
-## hook_embed : `[B,L,D]`
+## `hook_embed : [B,L,D]`
 
 The embedded tokens
 
-```
-# [B,L,D]                         [B,L]
-input_embed         = self.embedding(input)
-resid         = self.hook_embed(input_embed)
+```python
+# [B,L,D]                      [B,L]
+input_embed   = self.embedding(input)
+resid         = self.hook_embed(input_embed) # [B,L,D] 
 ```
 
 ## Hooks for each layer
@@ -116,7 +116,7 @@ x_in = self.in_proj(resid_norm) # no bias
 x_in = self.hook_in_proj(x_in) # [B,L,E]
 ```
 
-Note: You may be familiar with `in_proj` returning a `[B,L,2*E]` sized vector, which is then split into `x_in` and `skip`. In our implementation we split the `in_proj` from the original implementation into `skip_proj` and `in_proj`
+Note: You may be familiar with `in_proj` returning a `[B,L,2*E]` sized vector, which is then split into `x_in` and `skip`. In our implementation we split the `in_proj` from the original implementation into `skip_proj` and `in_proj` (this is numerically equivalent).
 
 
 ### `blocks.{layer}.hook_conv : [B,L,E]`
@@ -153,10 +153,6 @@ h = torch.zeros([Batch,E,N], device=self.cfg.device)
 h = self.hook_h_start(h) 
 ```
 
-### `blocks.{layer}.hook_h_start : [B,E,N]`
-
-The initial hidden state (always initialized to zero vector)
-
 ### `blocks.{layer}.hook_delta_1 : [B,L,D_delta]`
 
 Delta is computed by projecting x into a `D_delta` sized space, and the projecting back into a `E` sized space. 
@@ -187,7 +183,7 @@ This is `delta_2` after applying softplus.
 
 Note,
 
-$$softplus(x) = log(1+e^x)$$
+$$\text{softplus}(x) = \text{log}(1+e^x)$$
 
 softplus is basically a smooth relu.
 
@@ -362,7 +358,7 @@ We can finally do
 
 Resulting residual stream after applying the norm
 
-```
+```python
 # [B,L,D]                   [B,L,D]
 resid_normed     = self.norm( resid )
 resid_normed     = self.hook_norm(resid_normed) # [B,L,D]
@@ -372,7 +368,7 @@ resid_normed     = self.hook_norm(resid_normed) # [B,L,D]
 
 The output model logits
 
-```
+```python
 # [B,L,V]          [D->V]    [B,L,D]
 logits    = self.lm_head( resid_normed ) # no bias
 logits    = self.hook_logits(logits) # [B,L,V]
@@ -419,8 +415,7 @@ cfg = { # your config from a model using https://github.com/state-spaces/mamba
 #            dt_proj -> W_delta_2
 #            D       -> W_D
 #            norm_f  -> norm
-# it also does some moving around to make it look like HookedTransformer:
-# the model is lm_head
+# it also does some moving around to make it look like HookedTransformer
 
 hooked_mamba_cfg = hooked_mamba.convert_original_config_to_hooked_mamba_config(cfg, device=device)
 hooked_mamba_state_dict = hooked_mamba.convert_original_state_dict_to_hooked_format(state_dict)
@@ -577,25 +572,29 @@ for index, (corrupted_token, uncorrupted_token) in enumerate(zip(corrupted_str_t
         token_labels.append(f"{uncorrupted_token}->{corrupted_token}_{index}")
 
 # display outputs
-px.imshow(utils.to_numpy(patching_result_logits), x=token_labels, color_continuous_midpoint=0.0, color_continuous_scale="RdBu", labels={"x":"Position", "y":"Layer"}).show()
+px.imshow(utils.to_numpy(patching_result_logits), x=token_labels, color_continuous_midpoint=0.0, color_continuous_scale="RdBu", labels={"x":"Position", "y":"Layer"}, title='Normalized Logit Difference After Patching hook_h (hidden state)').show()
 ```
 
-## Patching on the ssm outputs 
+Which gives us:
+
+![Patching h](https://github.com/Phylliida/HookedMamba/blob/main/media/h%20patching.png?raw=true)
+
+## Patching on the layer inputs 
 
 Because there is a single hook called for all positions, we now need to only intervene on the specific position
 
 ```python
-# 'blocks.{layer}.hook_ssm_output' is after the ssm and after doing  y   +   x     *  self.W_D
-def ssm_output_patching_hook(
-    ssm_output: Float[torch.Tensor, "B L E"],
+# 'blocks.{layer}.resid_pre' is the input to layer {layer}
+def resid_pre_patching_hook(
+    resid_pre: Float[torch.Tensor, "B L E"],
     hook: HookPoint,
     position: int,
     layer: int
 ) -> Float[torch.Tensor, "B L E"]:
     # only intervene on the specific pos
-    corrupted_ssm_output = corrupted_activations[hook.name]
-    ssm_output[:, position, :] = corrupted_ssm_output[:, position, :]
-    return ssm_output
+    corrupted_resid_pre = corrupted_activations[hook.name]
+    resid_pre[:, position, :] = corrupted_resid_pre[:, position, :]
+    return resid_pre
 ```
 
 Here is the full code
@@ -655,23 +654,23 @@ for index, (corrupted_token, uncorrupted_token) in enumerate(zip(corrupted_str_t
     else:
         token_labels.append(f"{uncorrupted_token}->{corrupted_token}_{index}")
 
-# 'blocks.{layer}.hook_h.{pos}' is the recurrent state of that layer after processing tokens at and before pos position
-def ssm_output_patching_hook(
-    ssm_output: Float[torch.Tensor, "B L E"],
+# 'blocks.{layer}.resid_pre' is the input to layer {layer}
+def resid_pre_patching_hook(
+    resid_pre: Float[torch.Tensor, "B L E"],
     hook: HookPoint,
     position: int,
     layer: int
 ) -> Float[torch.Tensor, "B L E"]:
     # only intervene on the specific pos
-    corrupted_ssm_output = corrupted_activations[hook.name]
-    ssm_output[:, position, :] = corrupted_ssm_output[:, position, :]
-    return ssm_output
+    corrupted_resid_pre = corrupted_activations[hook.name]
+    resid_pre[:, position, :] = corrupted_resid_pre[:, position, :]
+    return resid_pre
     
 patching_result_logits = torch.zeros((model.cfg.n_layers, L), device=model.cfg.device)
 for layer in tqdm(range(model.cfg.n_layers)):
     for position in range(L):
-        patching_hook_name = f'blocks.{layer}.hook_ssm_output'
-        patching_hook = partial(ssm_output_patching_hook, layer=layer, position=position)
+        patching_hook_name = f'blocks.{layer}.hook_resid_pre'
+        patching_hook = partial(resid_pre_patching_hook, layer=layer, position=position)
         # [B,L,V]
         patched_logits = model.run_with_hooks(prompt_uncorrupted_tokens, fwd_hooks=[
             (patching_hook_name, patching_hook)
@@ -702,8 +701,12 @@ for index, (corrupted_token, uncorrupted_token) in enumerate(zip(corrupted_str_t
         token_labels.append(f"{uncorrupted_token}->{corrupted_token}_{index}")
 
 # display outputs
-px.imshow(utils.to_numpy(patching_result_logits), x=token_labels, color_continuous_midpoint=0.0, color_continuous_scale="RdBu", labels={"x":"Position", "y":"Layer"}).show()
+px.imshow(utils.to_numpy(patching_result_logits), x=token_labels, color_continuous_midpoint=0.0, color_continuous_scale="RdBu", labels={"x":"Position", "y":"Layer"}, title='Normalized Logit Difference After Patching hook_resid_pre (layer inputs)').show()
 ```
+
+Which gives us
+
+![Patching layer inputs](https://github.com/Phylliida/HookedMamba/blob/main/media/resid_pre%20patching.png?raw=true)
 
 # Optimizations:
 
@@ -790,8 +793,7 @@ pip install -e .
 
 I recommend looking at hooked_mamba.py if you are interested in how this is called.
 
-Using this will disable a few hooks:
-
+Using `fast_ssm=True` will disable a few hooks:
 
 ### `blocks.{layer}.hook_delta : [B,L,D_delta]`
 
