@@ -850,14 +850,14 @@ class HookedMambaBlock(nn.Module):
             # this is in case the hook modifies it
             if ssm_output_has_hooks:
                 # [B,L,E]
-                y_apply_D = rearrange(y_apply_D_ssm_output, "B E L -> B L E")
-                y_apply_D = self.hook_ssm_output(y_apply_D) # [B,L,E]
+                y_ssm_output = rearrange(y_apply_D_ssm_output, "B E L -> B L E")
+                y_ssm_output = self.hook_ssm_output(y_ssm_output) # [B,L,E]
 
                 # [B,L,E]   [B,L,E]             [B,L,E]
-                y_skip    = y_apply_D * F.silu(  skip  )
+                y_after_skip    = y_ssm_output * F.silu(  skip  )
             else:
                 # [B,L,E]
-                y_skip = rearrange(y_skip_ssm_output, "B E L -> B L E")
+                y_after_skip = rearrange(y_skip_ssm_output, "B E L -> B L E")
         else:
            
             # [B,L,E]           [B,L,E]
@@ -899,16 +899,16 @@ class HookedMambaBlock(nn.Module):
             ###### Finish block ######
             
             # [B,L,E]  [B,L,E]    [B,L,E]       [E]
-            y_apply_D =   y      +   x     *  self.W_D
-            y_apply_D =  self.hook_ssm_output(y_apply_D) # [B,L,E]
+            y_ssm_output =   y      +   x     *  self.W_D
+            y_ssm_output =  self.hook_ssm_output(y_ssm_output) # [B,L,E]
                 
             # [B,L,E]   [B,L,E]             [B,L,E]
-            y_skip    = y_apply_D * F.silu(  skip  )
+            y_after_skip    = y_ssm_output * F.silu(  skip  )
 
-        y_skip    =  self.hook_after_skip(y_skip) # [B,L,E]
+        y_after_skip    =  self.hook_after_skip(y_after_skip) # [B,L,E]
             
         # [B,L,D]         [E->D]   [B,L,E]
-        y_out     = self.out_proj( y_skip ) # no bias
+        y_out     = self.out_proj( y_after_skip ) # no bias
         y_out     = self.hook_out_proj(y_out) # [B,L,D]
     
         # [B,L,D]   [B,L,D]   [B,L,D]
