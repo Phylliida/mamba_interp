@@ -76,9 +76,12 @@ def greater_than_data_generator(tokenizer, num_examples, seed=27):
         YEARS.extend(all_success[1:-1]) # this is to prevent stuff like 1999 (next year is a different century), that way we can just complete 19__
         YEARS_CENTURY[century].extend(all_success)
 
+    nouns = restrict_to_most_common_size(tokenizer=tokenizer, words=NOUNS, with_space=True)
+    print("nouns using", nouns)
     # set some random seed
     torch.random.manual_seed(seed)
-    nouns_perm = torch.randint(0, len(NOUNS), (num_examples,))
+    random.seed(seed)
+    nouns_perm = torch.randint(0, len(nouns), (num_examples,))
     years_perm = torch.randint(0, len(YEARS), (num_examples,))
     
     for i in range(num_examples):
@@ -93,7 +96,7 @@ def greater_than_data_generator(tokenizer, num_examples, seed=27):
             else:
                 incorrect_outputs.append(str(output_decade))
         prompt = "The {noun} lasted from the year {year1} to ".format(
-            noun=NOUNS[nouns_perm[i]],
+            noun=nouns[nouns_perm[i]],
             year1=year,
         ) + str(century) # first two tokens of year: like 1920 -> 19
         yield prompt, correct_outputs, incorrect_outputs 
@@ -495,7 +498,8 @@ def restrict_to_most_common_size(tokenizer, words, with_space=False, force_size=
     
     for toks in tokenized_words:
         sizes[len(toks)] += 1
-    biggest_size, biggest_count = max(sizes.items(), key=lambda x: -x[1])
+    
+    biggest_size, biggest_count = max(sizes.items(), key=lambda x: x[1])
     if force_size:
         biggest_size = force_size
     return [word for toks, word in zip(tokenized_words, words) if len(toks) == biggest_size]
