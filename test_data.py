@@ -446,6 +446,16 @@ def IOI_generator(tokenizer, num_examples, seed=27, templates=None, symmetric=Tr
         names = [x.strip() for x in f.read().split("\n") if len(x.strip()) > 0]
         
     names = restrict_to_most_common_size(tokenizer, names, with_space=True, force_size=1)
+
+    # stuff like "chris" and "christine" get confused, ignore them
+    no_prefix_names = []
+    for name in names:
+        has_other_as_prefix = any([other.startswith(name) and other != name for other in names])
+        if not has_other_as_prefix:
+            no_prefix_names.append(name)
+        else:
+            other_prefix = names[[other.startswith(name) and other != name for other in names].index(True)]
+    names = no_prefix_names
     
     #print("nouns", noun_dict)
     
