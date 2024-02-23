@@ -462,7 +462,7 @@ def IOI_custom_generator(ioi_format, tokenizer, num_examples, seed):
     with open("first-names.txt", "r") as f:
         names = [x.strip() for x in f.read().split("\n") if len(x.strip()) > 0]
         
-    names = restrict_to_most_common_size(tokenizer, names, with_space=True, force_size=3)
+    names = restrict_to_most_common_size(tokenizer, names, with_space=True, force_size=1)
 
     # stuff like "chris" and "christine" get confused, ignore them
     no_prefix_names = []
