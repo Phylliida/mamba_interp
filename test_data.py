@@ -1,6 +1,7 @@
 from collections import defaultdict
 import torch
 import random
+import re
 import multiprocessing
 
 from transformers import AutoTokenizer
@@ -456,6 +457,73 @@ def strip_to_first_token(tokenizer, s):
 
 
 
+def IOI_custom_generator(ioi_format, tokenizer, num_examples, seed):
+
+    with open("first-names.txt", "r") as f:
+        names = [x.strip() for x in f.read().split("\n") if len(x.strip()) > 0]
+        
+    names = restrict_to_most_common_size(tokenizer, names, with_space=True, force_size=1)
+
+    # stuff like "chris" and "christine" get confused, ignore them
+    no_prefix_names = []
+    for name in names:
+        has_other_as_prefix = any([other.startswith(name) and other != name for other in names])
+        if not has_other_as_prefix:
+            no_prefix_names.append(name)
+        else:
+            other_prefix = names[[other.startswith(name) and other != name for other in names].index(True)]
+    names = no_prefix_names
+
+    noun_dict = {}
+    for k,v in NOUNS_DICT.items():
+        noun_dict[k] = restrict_to_most_common_size(tokenizer, v, with_space=True)
+
+    try:
+        prompt_uncorrupted_template = 'Lately, [A], [B], and [C] had fun at the [PLACE]. [D] and [E] gave a [OBJECT] to'
+        prompt_corrupted_template = 'Lately, [F], [G], and [H] had fun at the [PLACE]. [I] and [J] gave a [OBJECT] to'
+        
+        (a,b,c,space,d,e,space,answer1),(f,g,h,space,i,j,space,answer2) = ioi_format.split("\n")
+    except:
+        prompt_uncorrupted_template = 'Lately, [A] and [B] had fun at the [PLACE]. [D] gave a [OBJECT] to'
+        prompt_corrupted_template = 'Lately, [F] and [G] had fun at the [PLACE]. [I] gave a [OBJECT] to'
+        (a,b,space,d,space,answer1),(f,g,space,i,space,answer2) = ioi_format.split("\n")
+        c,e,h,j = a,a,a,a
+
+    random.seed(seed)
+
+    unique_tokens = set(re.sub(r"\s*", "", ioi_format))
+    for n in range(num_examples//2):
+        random.shuffle(names)
+        tok_map = {}
+        for ind, tok in enumerate(unique_tokens):
+            tok_map[tok] = names[ind]
+        place = random.choice(noun_dict['[PLACE]'])
+        object = random.choice(noun_dict['[OBJECT]'])
+        def replace_things(text, tok_map):
+            text = text.replace('[A]', tok_map[a])
+            text = text.replace('[B]', tok_map[b])
+            text = text.replace('[C]', tok_map[c])
+            text = text.replace('[D]', tok_map[d])
+            text = text.replace('[E]', tok_map[e])
+            text = text.replace('[F]', tok_map[f])
+            text = text.replace('[G]', tok_map[g])
+            text = text.replace('[H]', tok_map[h])
+            text = text.replace('[I]', tok_map[i])
+            text = text.replace('[J]', tok_map[j])
+            text = text.replace("[PLACE]", place)
+            text = text.replace("[OBJECT]", object)
+            return text
+        all_answers = [' ' + x for x in tok_map.values()]
+        prompt_uncorrupted = replace_things(prompt_uncorrupted_template, tok_map)
+        prompt_corrupted = replace_things(prompt_corrupted_template, tok_map)
+        uncorrupted_answer = ' ' + tok_map[answer1]
+        corrupted_answer = ' ' + tok_map[answer2]
+        uncorrupted_incorrect = list(all_answers)
+        uncorrupted_incorrect.remove(uncorrupted_answer)
+        corrupted_incorrect = list(all_answers)
+        corrupted_incorrect.remove(corrupted_answer)
+        yield prompt_uncorrupted, [uncorrupted_answer], uncorrupted_incorrect
+        yield prompt_corrupted, [corrupted_answer], corrupted_incorrect
 
 
 def IOI_generator(tokenizer, num_examples, seed=27, templates=None, symmetric=True):
