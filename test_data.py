@@ -3,6 +3,9 @@ import torch
 import random
 import re
 import multiprocessing
+import numpy as np
+import copy
+import itertools
 
 from transformers import AutoTokenizer
 
@@ -342,7 +345,7 @@ PLACES = [
     "station",
 ]
 OBJECTS = [
-    "ring",
+    "apple", # ring confuses the model
     "kiss",
     "bone",
     "basketball",
@@ -383,6 +386,214 @@ NOUNS_DICT = {"[PLACE]": PLACES, "[OBJECT]": OBJECTS}
 def replace_n_last_occurance(s, old, new, n):
     li = s.rsplit(old, n)
     return new.join(li)
+
+
+
+PREFIXES = [
+    "             Afterwards,",
+    "            Two friends met at a bar. Then,",
+    "  After a long day,",
+    "  After a long day,",
+    "    Then,",
+    "         Then,",
+]
+
+def flip_prefixes(ioi_prompts):
+    ioi_prompts = copy.deepcopy(ioi_prompts)
+    for prompt in ioi_prompts:
+        if prompt["text"].startswith("The "):
+            prompt["text"] = "After the lunch, the" + prompt["text"][4:]
+        else:
+            io_idx = prompt["text"].index(prompt["IO"])
+            s_idx = prompt["text"].index(prompt["S"])
+            first_idx = min(io_idx, s_idx)
+            prompt["text"] = random.choice(PREFIXES) + " " + prompt["text"][first_idx:]
+
+    return ioi_prompts
+
+def gen_flipped_prompts(prompts, names, animals, flip, seed=None):
+    """
+    Return a IOIDataset where the name to flip has been replaced by a random name.
+    """
+
+    assert seed is not None
+
+    assert isinstance(flip, tuple) or flip in [
+        "prefix",
+    ], f"{flip} is not a tuple. Probably change to ('IO', 'RAND') or equivalent?"
+
+    if flip == "prefix":
+        flipped_prompts = flip_prefixes(prompts)
+    else:
+        if flip in [("IO", "S1"), ("S", "IO")]:
+            flipped_prompts = gen_flipped_prompts_helper(
+                prompts=prompts,
+                names=names,
+                animals=animals,
+                flip=flip,
+                seed=(seed+12345)%9876,
+            )
+        elif flip == ("S2", "IO"):
+            flipped_prompts = gen_flipped_prompts_helper(
+                prompts=prompts,
+                names=names,
+                animals=animals,
+                flip=flip,
+                seed=(seed+12345)%6543,
+            )
+
+        else:
+            assert flip[1] == "RAND" and flip[0] in [
+                "S",
+                "RAND",
+                "S2",
+                "IO",
+                "S1",
+                "S+1",
+            ], flip
+            flipped_prompts = gen_flipped_prompts_helper(prompts=prompts, names=names, animals=animals, flip=flip, seed=(seed+345467)%5432)
+    return flipped_prompts
+
+def gen_flipped_prompts_helper(prompts, names, animals, flip=("S2", "IO"), seed=None):
+    """_summary_
+
+    Args:
+        prompts (List[D]): _description_
+        flip (tuple, optional): First element is the string to be replaced, Second is what to replace with. Defaults to ("S2", "IO").
+
+    Returns:
+        _type_: _description_
+    """
+
+    assert seed is not None
+    np.random.seed(seed)
+
+    flipped_prompts = []
+
+    for prompt in prompts:
+        t = prompt["text"].split(" ")
+        prompt = prompt.copy()
+        if flip[0] == "S2":
+            if flip[1] == "IO":
+                t[len(t) - t[::-1].index(prompt["S"]) - 1] = prompt["IO"]
+                temp = prompt["IO"]
+                prompt["IO"] = prompt["S"]
+                prompt["S"] = temp
+            elif flip[1] == "RAND":
+                rand_name = names[np.random.randint(len(names))]
+                while rand_name == prompt["IO"] or rand_name == prompt["S"]:
+                    rand_name = names[np.random.randint(len(names))]
+                t[len(t) - t[::-1].index(prompt["S"]) - 1] = rand_name
+            else:
+                raise ValueError("Invalid flip[1] value")
+
+        elif flip[0] == "IO":
+            if flip[1] == "RAND":
+                rand_name = names[np.random.randint(len(names))]
+                while rand_name == prompt["IO"] or rand_name == prompt["S"]:
+                    rand_name = names[np.random.randint(len(names))]
+
+                t[t.index(prompt["IO"])] = rand_name
+                t[t.index(prompt["IO"])] = rand_name
+                prompt["IO"] = rand_name
+            elif flip[1] == "ANIMAL":
+                rand_animal = animals[np.random.randint(len(animals))]
+                t[t.index(prompt["IO"])] = rand_animal
+                prompt["IO"] = rand_animal
+                # print(t)
+            elif flip[1] == "S1":
+                io_index = t.index(prompt["IO"])
+                s1_index = t.index(prompt["S"])
+                io = t[io_index]
+                s1 = t[s1_index]
+                t[io_index] = s1
+                t[s1_index] = io
+            else:
+                raise ValueError("Invalid flip[1] value")
+
+        elif flip[0] in ["S", "S1"]:
+            if flip[1] == "ANIMAL":
+                new_s = animals[np.random.randint(len(animals))]
+            if flip[1] == "RAND":
+                new_s = names[np.random.randint(len(names))]
+            t[t.index(prompt["S"])] = new_s
+            if flip[0] == "S":  # literally just change the first S if this is S1
+                t[len(t) - t[::-1].index(prompt["S"]) - 1] = new_s
+                prompt["S"] = new_s
+        elif flip[0] == "END":
+            if flip[1] == "S":
+                t[len(t) - t[::-1].index(prompt["IO"]) - 1] = prompt["S"]
+        elif flip[0] == "PUNC":
+            n = []
+
+            # separate the punctuation from the words
+            for i, word in enumerate(t):
+                if "." in word:
+                    n.append(word[:-1])
+                    n.append(".")
+                elif "," in word:
+                    n.append(word[:-1])
+                    n.append(",")
+                else:
+                    n.append(word)
+
+            # remove punctuation, important that you check for period first
+            if flip[1] == "NONE":
+                if "." in n:
+                    n[n.index(".")] = ""
+                elif "," in n:
+                    n[len(n) - n[::-1].index(",") - 1] = ""
+
+            # remove empty strings
+            while "" in n:
+                n.remove("")
+
+            # add punctuation back to the word before it
+            while "," in n:
+                n[n.index(",") - 1] += ","
+                n.remove(",")
+
+            while "." in n:
+                n[n.index(".") - 1] += "."
+                n.remove(".")
+
+            t = n
+
+        elif flip[0] == "C2":
+            if flip[1] == "A":
+                t[len(t) - t[::-1].index(prompt["C"]) - 1] = prompt["A"]
+        elif flip[0] == "S+1":
+            if t[t.index(prompt["S"]) + 1] == "and":
+                t[t.index(prompt["S"]) + 1] = [
+                    "with one friend named",
+                    "accompanied by",
+                ][np.random.randint(2)]
+            else:
+                t[t.index(prompt["S"]) + 1] = (
+                    t[t.index(prompt["S"])]
+                    + ", after a great day, "
+                    + t[t.index(prompt["S"]) + 1]
+                )
+                del t[t.index(prompt["S"])]
+        else:
+            raise ValueError(f"Invalid flipper {flip[0]}")
+
+        if "IO" in prompt:
+            prompt["text"] = " ".join(t)
+            flipped_prompts.append(prompt)
+        else:
+            flipped_prompts.append(
+                {
+                    "A": prompt["A"],
+                    "B": prompt["B"],
+                    "C": prompt["C"],
+                    "text": " ".join(t),
+                }
+            )
+
+    return flipped_prompts
+
+
 
 def gen_prompt_uniform(
     templates, names, nouns_dict, N, symmetric, prefixes=None, abc=False, seed=None,
@@ -455,29 +666,69 @@ def strip_to_first_token(tokenizer, s):
         raise Exception(f"when turned into single token {s} becomes only whitespace")
     return res
 
+def all_abc():
+    abc_formats = ['ABC DEF']
+    share_one_abc = ['ABC', 'BAC', 'BCA']
+    share_one_ade = [x.replace("B", "D").replace("C", "E") for x in share_one_abc]
+    abc_formats += [a + " " + b for (a,b) in itertools.product(share_one_abc, share_one_ade)]
+    
+    # share two
+    share_two_abc = ['ABC', 'ACB', 'CAB']
+    share_two_ade = [x.replace("C", "D") for x in share_two_abc]
+    share_two_all = [(a,b) for (a,b) in itertools.product(share_two_abc, share_two_ade)]
+    abc_formats += [a + " " + b for a,b in share_two_all]
+    # swap A and B in second one
+    abc_formats += [a + " " + b.replace("A", "W").replace("B", "A").replace("W","B") for a,b in share_two_all]
+    
+    # share three
+    abc_formats += ['ABC ABC']
+    abc_formats += ['ABC ACB', 'ABC CBA', 'ABC BAC'] # fix one, swap others
+    abc_formats += ['ABC BCA', 'ABC CAB'] # shift
+    for format in all_formats(abc_formats):
+        yield format
 
+def all_possible_postfixes(abc):
+    tokens = sorted(list(set(abc)))
+    for output1, output2 in itertools.combinations(tokens, 2):
+        other = set(tokens)
+        other.remove(output1)
+        other.remove(output2)
+        other = list(other)[0]
+        yield f"{abc} {output1}{output2} {other}"
+
+def all_formats(abc_formats):
+    for s in abc_formats:
+        first_abc, second_abc = s.split()
+        for s1 in all_possible_postfixes(first_abc):
+            for s2 in all_possible_postfixes(second_abc):
+                yield s1 + "\n" + s2
 
 def IOI_custom_generator(ioi_format, tokenizer, num_examples, seed):
 
-    with open("first-names.txt", "r") as f:
-        names = [x.strip() for x in f.read().split("\n") if len(x.strip()) > 0]
-        
-    names = restrict_to_most_common_size(tokenizer, names, with_space=True, force_size=1)
+    global good_names
+    global good_nouns
+    if not 'good_names' in globals() or good_names is None:
+        with open("first-names.txt", "r") as f:
+            names = [x.strip() for x in f.read().split("\n") if len(x.strip()) > 0]
+            
+        names = restrict_to_most_common_size(tokenizer, names, with_space=True, force_size=1)
 
-    # stuff like "chris" and "christine" get confused, ignore them
-    no_prefix_names = []
-    for name in names:
-        has_other_as_prefix = any([other.startswith(name) and other != name for other in names])
-        if not has_other_as_prefix:
-            no_prefix_names.append(name)
-        else:
-            other_prefix = names[[other.startswith(name) and other != name for other in names].index(True)]
-    names = no_prefix_names
+        # stuff like "chris" and "christine" get confused, ignore them
+        no_prefix_names = []
+        for name in names:
+            has_other_as_prefix = any([other.startswith(name) and other != name for other in names])
+            if not has_other_as_prefix:
+                no_prefix_names.append(name)
+            else:
+                other_prefix = names[[other.startswith(name) and other != name for other in names].index(True)]
+        names = no_prefix_names
+        good_names = names
 
-    noun_dict = {}
-    for k,v in NOUNS_DICT.items():
-        noun_dict[k] = restrict_to_most_common_size(tokenizer, v, with_space=True)
-
+        noun_dict = {}
+        for k,v in NOUNS_DICT.items():
+            noun_dict[k] = restrict_to_most_common_size(tokenizer, v, with_space=True)
+        good_nouns = noun_dict
+        print("good nouns", good_nouns)
     try:
         prompt_uncorrupted_template = 'Lately, [A], [B], and [C] had fun at the [PLACE]. [D] and [E] gave a [OBJECT] to'
         prompt_corrupted_template = 'Lately, [F], [G], and [H] had fun at the [PLACE]. [I] and [J] gave a [OBJECT] to'
@@ -490,15 +741,16 @@ def IOI_custom_generator(ioi_format, tokenizer, num_examples, seed):
         c,e,h,j = a,a,a,a
 
     random.seed(seed)
-
+    good_names = sorted(good_names)
+    
     unique_tokens = set(re.sub(r"\s*", "", ioi_format))
     for n in range(num_examples//2):
-        random.shuffle(names)
+        random.shuffle(good_names)
         tok_map = {}
         for ind, tok in enumerate(unique_tokens):
-            tok_map[tok] = names[ind]
-        place = random.choice(noun_dict['[PLACE]'])
-        object = random.choice(noun_dict['[OBJECT]'])
+            tok_map[tok] = good_names[ind]
+        place = random.choice(good_nouns['[PLACE]'])
+        object = random.choice(good_nouns['[OBJECT]'])
         def replace_things(text, tok_map):
             text = text.replace('[A]', tok_map[a])
             text = text.replace('[B]', tok_map[b])
