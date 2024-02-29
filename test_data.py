@@ -666,6 +666,58 @@ def strip_to_first_token(tokenizer, s):
         raise Exception(f"when turned into single token {s} becomes only whitespace")
     return res
 
+interventions = """
+ABC AB C
+ABD AB D
+-
+ACB AB C
+ADB AB D
+-
+CAB AB C
+DAB AB D
+-
+ABC AB C
+ABC AC B
+-
+-ABC AC B
+-ABC AB C
+-
+ABC AC B
+ABC BC A
+-
+-ABC BC A
+-ABC AC B
+"""
+
+def extra_pruned_abc():
+    lines = [x for x in interventions.split("\n") if len(x) == 8]
+    for i in range(0, len(lines), 2):
+        abc_format = lines[i] + "\n" + lines[i+1]
+        print(abc_format)
+        print()
+        yield abc_format
+
+# remove any pairs that have the same answer
+def pruned_abc():
+    for abc_format in all_abc():
+        abc1, abc2 = abc_format.split("\n")
+        answer1 = abc1.split()[-1]
+        answer2 = abc2.split()[-1]
+        num_differences = 0
+        for c1, c2 in zip(abc1, abc2):
+            if c1 != c2:
+                num_differences += 1
+        have_different_answer = answer1 != answer2
+        has_e_or_f = 'E' in abc2 or 'F' in abc2
+        if have_different_answer and not has_e_or_f and num_differences <= 2:
+            print("success")
+            print(abc_format)
+            yield abc_format
+        else:
+            pass
+
+
+# this correct, but too many
 def all_abc():
     abc_formats = ['ABC DEF']
     share_one_abc = ['ABC', 'BAC', 'BCA']
