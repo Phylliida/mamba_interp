@@ -667,26 +667,20 @@ def strip_to_first_token(tokenizer, s):
     return res
 
 interventions = """
-ABC AB C
-ABD AB D
+CAB AB C
+DAB AB D
 -
 ACB AB C
 ADB AB D
 -
-CAB AB C
-DAB AB D
+ABC AB C
+ABD AB D
 -
 ABC AB C
 ABC AC B
 -
--ABC AC B
--ABC AB C
--
 ABC AC B
 ABC BC A
--
--ABC BC A
--ABC AC B
 """
 
 def extra_pruned_abc():
