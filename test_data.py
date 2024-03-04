@@ -786,8 +786,11 @@ def IOI_custom_generator(ioi_format, tokenizer, num_examples, seed):
         (a,b,space,d,space,answer1),(f,g,space,i,space,answer2) = ioi_format.split("\n")
         c,e,h,j = a,a,a,a
 
+    good_names = ['Adrian', 'Jennifer', 'Kate', 'Olivia', 'Shawn', 'Shannon']
     random.seed(seed)
     good_names = sorted(good_names)
+    print(good_names)
+    #good_names = [good_names[2]
     
     unique_tokens = set(re.sub(r"\s*", "", ioi_format))
     for n in range(num_examples//2):
