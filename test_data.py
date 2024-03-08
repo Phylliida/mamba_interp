@@ -94,17 +94,22 @@ NOUNS = [
 def greater_than_data_generator(tokenizer, num_examples, seed=27):
     YEARS = []
     YEARS_CENTURY = defaultdict(lambda: [])
-
+    DECADES = []
+    for i in range(100):
+        s = str(i)
+        if i < 10:
+            s = f"0{s}"
+        DECADES.append(tokenizer.encode(s)[0])
+    DECADES = [(tokenizer.decode(tok), tok) for tok in DECADES]
     for century in range(11, 18):
         all_success = []
-        for year in range(century * 100 + 2, (century * 100) + 99):
+        for year in range(century * 100 + 2, (century * 100) + 100):
             a = tokenizer.encode(f" {year}")
             # make sure it tokenizes cleanly into like 1420 -> 14 and 20
             if a == [tokenizer.encode(f" {str(year)[:2]}")[0], tokenizer.encode(str(year)[2:])[0]]:
                 all_success.append(str(year))
         YEARS.extend(all_success[1:-1]) # this is to prevent stuff like 1999 (next year is a different century), that way we can just complete 19__
-        YEARS_CENTURY[century].extend(all_success)
-
+        
     nouns = restrict_to_most_common_size(tokenizer=tokenizer, words=NOUNS, with_space=True)
     print("nouns using", nouns)
     # set some random seed
@@ -118,16 +123,12 @@ def greater_than_data_generator(tokenizer, num_examples, seed=27):
         century, decade = int(year[:2]), int(year[2:])
         correct_outputs = []
         incorrect_outputs = []
-        for output_year in YEARS_CENTURY[century]:
-            output_century, output_decade = int(output_year[:2]), int(output_year[2:])
-            if output_decade > decade:
-                correct_outputs.append(str(output_decade))
+        for output_decade, tok in DECADES:
+            if int(output_decade) > decade:
+                correct_outputs.append(output_decade)
             else:
-                incorrect_outputs.append(str(output_decade))
-        prompt = "The {noun} lasted from the year {year1} to ".format(
-            noun=nouns[nouns_perm[i]],
-            year1=year,
-        ) + str(century) # first two tokens of year: like 1920 -> 19
+                incorrect_outputs.append(output_decade)
+        prompt = f"The {nouns[nouns_perm[i]]} lasted from the year {year} to {century}" # century is first two tokens of year: like 1920 -> 19
         yield prompt, correct_outputs, incorrect_outputs 
             
 ##########################################################            
