@@ -201,7 +201,7 @@ $$\stackrel{[1]}{\Delta_{t,e}} = \text{softplus}(\stackrel{[E]}{x_{t}} \cdot \st
 
 Be instead
 
-$$\stackrel{[1]}{\Delta_{t,e}} = \text{softplus}(\overset{[1]}{\overbrace{\stackrel{[E]}{x_{t}} \cdot \overset{[E]}{\overbrace{\stackrel{[E,1]}{\overbrace{\Big(\stackrel{[E,D_\Delta]}{W_{\Delta_1}}  \stackrel{[D_\Delta,1]}{\overbrace{\stackrel{[D_\Delta]}{W_{\Delta_2}[:,e]}.\text{view}(D_\Delta,1)}}\Big)}}.\text{view}(E)}}}} + \stackrel{[1]}{B_{\Delta}[e]})$$
+$$\stackrel{[1]}{\Delta_{t,e}} = \text{softplus}(\overset{[1]}{\overbrace{\stackrel{[E]}{x_{t}} \cdot \overset{[E]}{{{\overbrace{\Big(\stackrel{[E,D_\Delta]}{W_{\Delta_1}}  {{\stackrel{[D_\Delta]}{W_{\Delta_2}[:,e]}}}\Big)}}}}}} + \stackrel{[1]}{B_{\Delta}[e]})$$
 
 ## RMSNorm
 
