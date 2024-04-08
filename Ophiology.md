@@ -213,6 +213,10 @@ If $\text{mean}$ was instead $\text{sum}$, this first term would be normalizing 
 
 $$RMSNorm(\stackrel{[B,L,D]}{x}) = \sqrt{D}\frac{x}{\sqrt{\text{sum}(x^2, \text{dim=-1})}}\text{weight}$$
 
+The reason we want to do this is so that each _element_'s value is on average 1, as opposed to the whole activation's
+vector. Since the introduction of the He initialization [^resnet2016], deep learning weights have been initialized so
+the activation variance is 1 assuming the input variance is 1, thus keeping gradients stable throughout training.
+
 # Full Architecture
 
 Now that we know how the SSM works, here is the full architecture.
@@ -223,10 +227,10 @@ Now that we know how the SSM works, here is the full architecture.
 
 - $B$ is the batch size
 - $L$ is the context length
-- $D=d_{model}=1024$ is the dimension of the residual stream
-- $E=d_{inner}=2048$ is the dimension of the embed size
-- $N=d_{state}=16$ is the dimension of the state space 
-- $D_{delta}=dt_{rank}=64$ is the low rank size used when calculating delta, see section 4.4
+- $D=d_\text{model}=1024$ is the dimension of the residual stream
+- $E=d_\text{inner}=2048$ is the dimension of the embed size
+- $N=d_\text{state}=16$ is the dimension of the state space
+- $D_\text{delta}=dt_\text{rank}=64$ is the low rank size used when calculating delta, see section 4.4
 
 ## Notes on reading these graphs
 
@@ -716,7 +720,7 @@ def mamba_conv1d(x, conv):
 ```
 
 
-[^expexpand]: The taylor series expansion of $\exp(x)$ at $x=0$ is $$\exp(x) = 1 + x + \frac{x^2}{2} + \frac{x^3}{6} + ...$$ And if we just consider the first-order terms, then we get $$\exp(x) \approx 1 + x$$
+[^expexpand]: The Taylor series expansion of $\exp(x)$ at $x=0$ is $$\exp(x) = 1 + x + \frac{x^2}{2} + \frac{x^3}{6} + ...$$ And if we just consider the first-order terms, then we get $$\exp(x) \approx 1 + x$$
 
 [^fu2023hungry]: Daniel Y. Fu, Tri Dao, Khaled K. Saab, Armin W. Thomas, Atri Rudra, and Christopher R ́e. Hungry hungry hippos: Towards language modeling with state space models, 2023. [https://arxiv.org/abs/2212.14052](https://arxiv.org/abs/2212.14052)
 
@@ -729,3 +733,6 @@ def mamba_conv1d(x, conv):
 [^lieber2024jamba]: Opher Lieber, Barak Lenz, Hofit Bata, Gal Cohen, Jhonathan Osin, Itay Dalmedigos, Erez Safahi, Shaked Meirom, Yonatan Belinkov, Shai Shalev-Shwartz, Omri Abend, Raz Alon, Tomer Asida, Amir Bergman, Roman Gloz-man, Michael Gokhman, Avashalom Manevich, Nir Ratner, Noam Rozen, Erez Shwartz, Mor Zusman, and Yoav Shoham. Jamba: A hybrid transformer-mamba language model, 2024. [https://arxiv.org/abs/2403.19887](https://arxiv.org/abs/2403.19887)
 
 [^pascanu2012rnn]: Pascanu, Razvan, Tomas Mikolov, and Yoshua Bengio. "On the difficulty of training recurrent neural networks." International Conference on Machine Learning, 2013. [https://arxiv.org/abs/1211.5063](https://arxiv.org/abs/1211.5063)
+
+[^resnet2016]: He, Kaiming, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. "Delving deep into rectifiers: Surpassing human-level performance on ImageNet classification." In Proceedings of the IEEE International Conference on Computer Vision, pp. 1026-1034. 2015. [https://arxiv.org/abs/1502.01852](https://arxiv.org/abs/1502.01852)
+
