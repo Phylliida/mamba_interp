@@ -1,4 +1,4 @@
-The following post was made as part of Danielle's MATS work on doing circuit-based mech interp on Mamba, under the mentorship of Adrià Garriga-Alonso. It's the first in a sequence of posts about finding an IOI circuit in Mamba/applying [ACDC](https://arxiv.org/abs/2304.14997) to Mamba.
+The following post was made as part of Danielle's MATS work on doing circuit-based mech interp on Mamba, mentored by Adrià Garriga-Alonso. It's the first in a sequence of posts about finding an IOI circuit in Mamba/applying [ACDC](https://arxiv.org/abs/2304.14997) to Mamba.
 
 This introductory post was also made in collaboration with Gonçalo Paulo.
 
@@ -37,7 +37,7 @@ The inspiration for Mamba (and similar models) is an established technique used 
 
 Specifically, we have the following:
 
-$$\stackrel{[N]}{\dot{h}(t)} = \stackrel{[N,N]}{A}\stackrel{[N]}{h(t)} + \stackrel{[N,E]}{B}\stackrel{[E]}{h(t)}$$
+$$\stackrel{[N]}{\dot{h}(t)} = \stackrel{[N,N]}{A}\stackrel{[N]}{h(t)} + \stackrel{[N,E]}{B}\stackrel{[E]}{x(t)}$$
 $$\stackrel{[E]}{y(t)} = \stackrel{[E,N]}{C}\stackrel{[N]}{h(t)} + \stackrel{[E,E]} D\stackrel{[E]} x(t)$$
 
 This is an ordinary differential equation (ODE), where $\dot{h}(t)$ is the derivative of $h(t)$ with respect to time, t. This ODE can be solved in various ways, which will be described below.
@@ -54,7 +54,8 @@ $$\stackrel{[E]}{y_t} = \stackrel{[E,N]}{C}\stackrel{[N]}{h_t} + \stackrel{[E,E]
 
 where $\overline{A}$ and $\overline{B}$ are our \emph{discretization matrices}. Different ways of integrating the original ODE will give different $\overline{A}$ and $\overline{B}$, but will still preserve this overall form.
 
-$t$ corresponds to a discrete time. In language modeling, $t$ refers to the token position.
+In a context with discretization matrices, $t$ corresponds to a discrete time. In language modeling, $t$ refers to the
+token position.
 
 ## Euler method
 
@@ -74,17 +75,20 @@ $$h_{t+1}= \Delta t(A h_t + B x_t) + h_t $$
 
 as
 
-$$ h_t = (\Delta A + I ) h_{t-1} + \Delta B x_{t}$$
+$$ h_t = (\Delta A + I ) h_{t-1} + \Delta B x_{t}$$.
 
 which means that, for the Euler Method, $\overline{A} = (\Delta A + I )$ and $\overline{B} = \Delta B$.
+Here, $\Delta$ is an abbreviation of $\Delta t$, the discretization size in time.
+
+[comment]: # (What are \Delta A and \Delta B here? We haven't introduced A and B as time-varying, so it should just be A and B. Or, we properly introduce A and B as time-varying.)
 
 ## Zero-Order Hold (ZOH)
 
-Another way to integrate the ODE is to consider that the input remains fixed during a time interval $\Delta$, and to integrate the differential equation from time $t$ to $t+\Delta$. This gives us an expression for $x(t+\Delta)$:
+Another way to integrate the ODE is to consider that the input $x(t)$ remains fixed during a time interval $\Delta$, and to integrate the differential equation from time $t$ to $t+\Delta$. This gives us an expression for $x(t+\Delta)$:
 
 $$x(t+\Delta) = e^{\Delta A} x(t) + u(t+1)\int_t^{t+\Delta} e^{(t+\Delta-\tau) A} B  d\tau$$
 
-With some algebra [algebra](https://faculty.washington.edu/chx/teaching/me547/1-8_zohSS_slides.pdf) we finally get:
+With some [algebra](https://faculty.washington.edu/chx/teaching/me547/1-8_zohSS_slides.pdf) we finally get:
 
 $$\overline{A} = \exp(\Delta A) \quad \overline{B} = (\Delta A)^{-1} (\exp(\Delta A)-I) \Delta B$$
 
@@ -98,7 +102,7 @@ Why is this justified? Consider the ZOH $\overline{B}$:
 
 $$\overline{B} = (\Delta A)^{-1} (\exp(\Delta A)-I) \Delta B$$
 
-In mamba, $A$ is diagonal, as we will see later, so we can write
+In Mamba, $A$ is diagonal, as we will see later, so we can write
 
 $$\big((\Delta A)^{-1} (\exp(\Delta A)-I)\big)_{i,i}=\frac{\exp(\Delta A_{i,i}) - 1}{\Delta A_{i,i}}$$
 
@@ -106,11 +110,11 @@ If we consider that $\Delta A_{i,i}$ is small and we expand the exponential to j
 
 $$\overline{B} = (\Delta A)^{-1} (\exp(\Delta A)-I) \Delta B \approx \Delta B$$
 
-for small enough $\Delta A_{i,i}$. Using the same approximation 
+for small enough $\Delta A_{i,i}$. Using the same approximation for $\overline{A}$ recovers the Euler method:
 
-$$\overline{A} = \exp(\Delta A) \approx I+\Delta A$$
+$$\overline{A} = \exp(\Delta A) \approx I+\Delta A.$$
 
-Which recovers the Euler Method. In the original work, the authors argued that while ZOH was necessary for the modeling of $\overline{A}$, using the Euler Method for $\overline{B}$ gave reasonable results, without having to compute $(\Delta A)^{-1}$.
+In the original work, the authors argued that while ZOH was necessary for the modeling of $\overline{A}$, using the Euler Method for $\overline{B}$ gave reasonable results, without having to compute $(\Delta A)^{-1}$.
 
 # Specific Quirks to Mamba
 
@@ -127,7 +131,7 @@ $$\stackrel{[E]}{y_t} = \stackrel{[N]}{C}\stackrel{[E,N]}{h_t} + \stackrel{[E]}{
 When trying to understand Mamba, I find it's easiest to start with each $x_{t}$ being a single value first, and then working up from there. The standard SSM equation is, then:
 
 $$\stackrel{[N]}{h_{t}} = \stackrel{[N,N]}{\overline{A}}\stackrel{[N]}{h_{t-1}} + \stackrel{[N,1]}{\overline{B}}\stackrel{[1]}{x_{t}}$$
-$$\stackrel{[1]}{y_t} = \stackrel{[1,N]}{C}\stackrel{[N]}{h_t} + \stackrel{[1,1]} D\stackrel{[1]} x_t$$
+$$\stackrel{[1]}{y_t} = \stackrel{[1,N]}{C}\stackrel{[N]}{h_t} + \stackrel{[1,1]}D \stackrel{[1]} x_t$$
 
 The authors of the original Mamba paper were working on top of previous results on Structured SSMs. Because of this, in this work, A is a diagonal matrix. This means that A can be represented as a set of N numbers instead of a $NxN$ matrix. That gives us:
 
@@ -151,7 +155,9 @@ $$\stackrel{[N]}{h_{t,e}} = \stackrel{[N]}{\overline{A_e}}\stackrel{[N]}{h_{t-1,
 
 ## Selection mechanism
 
-Mamba deviates from the simplest SSM approaches, and from the previous work of the authors, by making matrices B and C dependent on the input, x(t). Not only that, but $\Delta$ is also input dependent. This replaces the equations shown above, with one which takes the form:
+Mamba deviates from the simplest SSM approaches, and from the previous work of the authors, by making matrices B and C
+dependent on the input, x(t). Not only that, but the time discretization $\Delta$ is also input dependent. This replaces
+the equations shown above, with one which takes the form:
 
 $$\stackrel{[N]}{h_{t,e}} = \stackrel{[N]}{\overline{A_{t,e}}}\stackrel{[N]}{h_{t-1,e}} + \stackrel{[N,1]}{\overline{B_{t,e}}}\stackrel{[1]}{x_{t,e}}$$
 $$\stackrel{[1]}{y_{t,e}} = \stackrel{[1,N]}{C_t}\stackrel{[N]}{h_{t,e}} + \stackrel{[1,1]} D\stackrel{[1]} x_{t,e}$$
@@ -173,11 +179,17 @@ with $\stackrel{[E,E]}{W^{\Delta}}, \stackrel{[E]}{B^{\Delta}}, \stackrel{[N,E]}
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;softplus
 
-One final thing to note: A is not a trainable parameter, and what is actually trained is $\stackrel{[E,N]}A_{\text{log}}$. $A$ is then computed as $A = -exp(A_{\text{log}})$ (using element-wise exp). This ensures $A$ is a strictly negative number.
+One final thing to note: A is not a trainable parameter, and what is actually trained is $\stackrel{[E,N]}A_{\text{log}}$. $A$ is then computed as $A = -exp(A_{\text{log}})$ (using element-wise exp). This ensures $A$ is a strictly negative number
+
+In turn, this implies that $\exp(\Delta A)$ is between 0 and 1. This is important for stable training: it ensures that
+the elements of $h(t)$ do not grow exponentially with token position $t$, and the gradients do not explode. It is long
+known [^pascanu2012rnn] that the explosion and vanishing of gradients are obstacles to training RNNs, and successful
+architectures (LSTM, GRU) minimize these.
+
 
 ## $W_{\Delta}$ is low rank
 
-In mamba, they don't encode $\stackrel{[E,E]}{W_{\Delta}}$ as an $[E,E]$ matrix. Instead, it is encoded as two smaller matrices:
+In Mamba, they don't encode $\stackrel{[E,E]}{W_{\Delta}}$ as an $[E,E]$ matrix. Instead, it is encoded as two smaller matrices:
 
 $$\stackrel{[E,E]}{W_{\Delta}}=\stackrel{[E,D_{\Delta}]}{W_{\Delta_1}}\stackrel{[D_{\Delta},E]}{W_{\Delta_2}}$$
 
@@ -189,7 +201,7 @@ $$\stackrel{[1]}{\Delta_{t,e}} = \text{softplus}(\stackrel{[E]}{x_{t}} \cdot \st
 
 Be instead
 
-$$\stackrel{[1]}{\Delta_{t,e}} = \text{softplus}(\overset{[1]}{\overbrace{\stackrel{[E]}{x_{t}} \cdot \overset{[E]}{\overbrace{\stackrel{[E,1]}{\overbrace{\Big(\stackrel{[E,D_\Delta]}{W_{\Delta_1}}  \stackrel{[D_\Delta,1]}{\overbrace{\stackrel{[D_\Delta]}{W_{\Delta_2}[:,e]}.\text{view}(D_\Delta,1)}}\Big)}}.\text{view}(E)}}}} + \stackrel{[1]}{B_{\Delta}[e]})$$
+$$\stackrel{[1]}{\Delta_{t,e}} = \text{softplus}(\overset{[1]}{\overbrace{\stackrel{[E]}{x_{t}} \cdot \overset{[E]}{{{\overbrace{\Big(\stackrel{[E,D_\Delta]}{W_{\Delta_1}}  {{\stackrel{[D_\Delta]}{W_{\Delta_2}[:,e]}}}\Big)}}}}}} + \stackrel{[1]}{B_{\Delta}[e]})$$
 
 ## RMSNorm
 
@@ -201,6 +213,10 @@ If $\text{mean}$ was instead $\text{sum}$, this first term would be normalizing 
 
 $$RMSNorm(\stackrel{[B,L,D]}{x}) = \sqrt{D}\frac{x}{\sqrt{\text{sum}(x^2, \text{dim=-1})}}\text{weight}$$
 
+The reason we want to do this is so that each _element_'s value is on average 1, as opposed to the whole activation's
+vector. Since the introduction of the He initialization [^resnet2016], deep learning weights have been initialized so
+the activation variance is 1 assuming the input variance is 1, thus keeping gradients stable throughout training.
+
 # Full Architecture
 
 Now that we know how the SSM works, here is the full architecture.
@@ -211,10 +227,10 @@ Now that we know how the SSM works, here is the full architecture.
 
 - $B$ is the batch size
 - $L$ is the context length
-- $D=d_{model}=1024$ is the dimension of the residual stream
-- $E=d_{inner}=2048$ is the dimension of the embed size
-- $N=d_{state}=16$ is the dimension of the state space 
-- $D_{delta}=dt_{rank}=64$ is the low rank size used when calculating delta, see section 4.4
+- $D=d_\text{model}=1024$ is the dimension of the residual stream
+- $E=d_\text{inner}=2048$ is the dimension of the embed size
+- $N=d_\text{state}=16$ is the dimension of the state space
+- $D_\text{delta}=dt_\text{rank}=64$ is the low rank size used when calculating delta, see section 4.4
 
 ## Notes on reading these graphs
 
@@ -704,7 +720,7 @@ def mamba_conv1d(x, conv):
 ```
 
 
-[^expexpand]: The taylor series expansion of $\exp(x)$ at $x=0$ is $$\exp(x) = 1 + x + \frac{x^2}{2} + \frac{x^3}{6} + ...$$ And if we just consider the first-order terms, then we get $$\exp(x) \approx 1 + x$$
+[^expexpand]: The Taylor series expansion of $\exp(x)$ at $x=0$ is $$\exp(x) = 1 + x + \frac{x^2}{2} + \frac{x^3}{6} + ...$$ And if we just consider the first-order terms, then we get $$\exp(x) \approx 1 + x$$
 
 [^fu2023hungry]: Daniel Y. Fu, Tri Dao, Khaled K. Saab, Armin W. Thomas, Atri Rudra, and Christopher R ́e. Hungry hungry hippos: Towards language modeling with state space models, 2023. [https://arxiv.org/abs/2212.14052](https://arxiv.org/abs/2212.14052)
 
@@ -715,3 +731,8 @@ def mamba_conv1d(x, conv):
 [^gu2022efficiently]: Albert Gu, Karan Goel, and Christopher Re. Efficiently modeling long sequences with structured state spaces, 2022. [https://arxiv.org/abs/2111.00396](https://arxiv.org/abs/2111.00396)
 
 [^lieber2024jamba]: Opher Lieber, Barak Lenz, Hofit Bata, Gal Cohen, Jhonathan Osin, Itay Dalmedigos, Erez Safahi, Shaked Meirom, Yonatan Belinkov, Shai Shalev-Shwartz, Omri Abend, Raz Alon, Tomer Asida, Amir Bergman, Roman Gloz-man, Michael Gokhman, Avashalom Manevich, Nir Ratner, Noam Rozen, Erez Shwartz, Mor Zusman, and Yoav Shoham. Jamba: A hybrid transformer-mamba language model, 2024. [https://arxiv.org/abs/2403.19887](https://arxiv.org/abs/2403.19887)
+
+[^pascanu2012rnn]: Pascanu, Razvan, Tomas Mikolov, and Yoshua Bengio. "On the difficulty of training recurrent neural networks." International Conference on Machine Learning, 2013. [https://arxiv.org/abs/1211.5063](https://arxiv.org/abs/1211.5063)
+
+[^resnet2016]: He, Kaiming, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. "Delving deep into rectifiers: Surpassing human-level performance on ImageNet classification." In Proceedings of the IEEE International Conference on Computer Vision, pp. 1026-1034. 2015. [https://arxiv.org/abs/1502.01852](https://arxiv.org/abs/1502.01852)
+
